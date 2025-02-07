@@ -3,6 +3,7 @@ mod buffer;
 mod cmd;
 mod context;
 mod debug;
+mod geometry;
 mod pipeline;
 mod structs;
 mod swapchain;

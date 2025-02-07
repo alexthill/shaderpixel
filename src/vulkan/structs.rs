@@ -1,4 +1,3 @@
-//use crate::fs;
 use crate::math::{Deg, Matrix4, Vector3};
 
 use ash::vk;
@@ -8,6 +7,7 @@ use glslang::{
 };
 use std::{
     borrow::Cow,
+    io::Cursor,
     mem::offset_of,
     path::Path,
 };
@@ -16,7 +16,7 @@ use std::{
 pub struct Shader {
     #[allow(unused)]
     path: Option<Cow<'static, Path>>,
-    data: Option<Cow<'static, [u8]>>,
+    data: Option<Box<[u32]>>,
 }
 
 impl Shader {
@@ -27,14 +27,16 @@ impl Shader {
         }
     }
 
-    pub fn new_static(data: &'static [u8]) -> Self {
-        Self {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        let mut cursor = Cursor::new(bytes);
+        let data = ash::util::read_spv(&mut cursor)?;
+        Ok(Self {
             path: None,
-            data: Some(Cow::Borrowed(data)),
-        }
+            data: Some(data.into()),
+        })
     }
 
-    pub fn data(&self) -> Option<&[u8]> {
+    pub fn data(&self) -> Option<&[u32]> {
         self.data.as_deref()
     }
 
@@ -62,16 +64,7 @@ impl Shader {
                 None,
             )?;
             let shader = compiler.create_shader(input)?;
-            let data: Vec<u32> = shader.compile()?;
-            // SAFETY
-            // We are deconstructing a Vec<u32> and reconstructing it as Vec<u8>
-            // with len and cap times 4.
-            let data: Vec<u8> = unsafe {
-                let cap = data.capacity();
-                let data = data.leak();
-                let ptr = std::mem::transmute::<*mut u32, *mut u8>(data.as_mut_ptr());
-                Vec::from_raw_parts(ptr, data.len() * 4, cap * 4)
-            };
+            let data = shader.compile()?;
             self.data = Some(data.into());
         }
         Ok(())

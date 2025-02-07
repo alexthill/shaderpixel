@@ -107,13 +107,13 @@ impl App {
             .context("Failed to find an image")?;
         let dims = [WIDTH, HEIGHT];
         let shaders_vert = [
-            Shader::new_static(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv"))),
-            Shader::new_static(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv"))),
+            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?,
+            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
             Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
         ];
         let shaders_frag = [
-            Shader::new_static(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv"))),
-            Shader::new_static(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv"))),
+            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
+            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
             Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
         ];
         let vulkan = VkApp::new(

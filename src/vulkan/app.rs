@@ -1,14 +1,16 @@
 use crate::fs;
 use crate::math::{self, Deg, Matrix4, Vector3};
 use crate::obj::NormalizedObj;
-use super::buffer;
-use super::cmd;
-use super::context::VkContext;
-use super::debug::*;
-use super::pipeline::{Geometry, Pipeline};
-use super::structs::{Shader, UniformBufferObject, Vertex};
-use super::swapchain::{SwapchainProperties, SwapchainSupportDetails};
-use super::texture::Texture;
+use super::{
+    buffer, cmd,
+    context::VkContext,
+    geometry::Geometry,
+    debug::*,
+    pipeline::Pipeline,
+    structs::{Shader, UniformBufferObject, Vertex},
+    swapchain::{SwapchainProperties, SwapchainSupportDetails},
+    texture::Texture,
+};
 
 use anyhow::Context;
 use ash::{
@@ -1459,10 +1461,9 @@ impl VkApp {
         }
 
         let pipelines: &[Pipeline] = if self.show_cubemap {
-            // &[self.pipeline, self.pipeline_cubemap, self.pipeline_mbox]
             &[self.pipeline_cubemap, self.pipeline_mbox]
         } else {
-            &[self.pipeline, self.pipeline_mbox]
+            &[self.pipeline_mbox]
         };
         self.command_buffers = Self::create_and_register_command_buffers(
             device,
