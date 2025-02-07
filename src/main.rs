@@ -50,7 +50,6 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let mut app = App {
-        movement_speed: 1.0,
         ..Default::default()
     };
     app.model_carousel.set_dir("assets/models");
@@ -87,7 +86,7 @@ struct App {
     cursor_delta: [i32; 2],
     tex_weight_change: f32,
     is_fullscreen: bool,
-    movement_speed: f32,
+    scroll_lines: f32,
 
     model_carousel: Carousel,
     image_carousel: Carousel,
@@ -212,7 +211,7 @@ impl ApplicationHandler for App {
                     }
                     (Key::Character("l"), true) => {
                         vulkan.reset_ubo();
-                        self.movement_speed = 1.0;
+                        self.scroll_lines = 0.0;
                     }
                     (Key::Character("t"), true) => {
                         self.tex_weight_change = if self.tex_weight_change == 0. {
@@ -247,7 +246,7 @@ impl ApplicationHandler for App {
                 delta: MouseScrollDelta::LineDelta(_, v_lines),
                 ..
             } => {
-                self.movement_speed += self.movement_speed * v_lines * 0.5;
+                self.scroll_lines += v_lines;
             }
             _ => {}
         }
@@ -286,7 +285,7 @@ impl ApplicationHandler for App {
         }
 
         let elapsed = self.last_frame.map(|instant| instant.elapsed()).unwrap_or_default();
-        let delta = elapsed.as_secs_f32() * self.movement_speed;
+        let delta = elapsed.as_secs_f32() * (self.scroll_lines * 0.25).exp();
         self.last_frame = Some(Instant::now());
 
         let translation = Vector3::from([

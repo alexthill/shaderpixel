@@ -30,11 +30,11 @@ const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 const SHADER_FRAG_IDX_MAIN: usize = 0;
 const SHADER_FRAG_IDX_CUBE: usize = 1;
-const SHADER_FRAG_IDX_ART: usize = 2;
+const SHADER_FRAG_IDX_MBOX: usize = 2;
 
 const SHADER_VERT_IDX_MAIN: usize = 0;
 const SHADER_VERT_IDX_CUBE: usize = 1;
-const SHADER_VERT_IDX_ART: usize = 2;
+const SHADER_VERT_IDX_MBOX: usize = 2;
 
 const ART_CULL_MODE: vk::CullModeFlags = vk::CullModeFlags::BACK;
 
@@ -61,7 +61,7 @@ pub struct VkApp {
     descriptor_set_layout: vk::DescriptorSetLayout,
     pipeline: Pipeline,
     pipeline_cubemap: Pipeline,
-    pipeline_art: Pipeline,
+    pipeline_mbox: Pipeline,
     swapchain_framebuffers: Vec<vk::Framebuffer>,
     command_pool: vk::CommandPool,
     transient_command_pool: vk::CommandPool,
@@ -230,7 +230,7 @@ impl VkApp {
             pipeline
         };
 
-        let pipeline_art = {
+        let pipeline_mbox = {
             let mut pipeline = Pipeline::new(
                 vk_context.device(),
                 properties,
@@ -238,7 +238,7 @@ impl VkApp {
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
-                [&shaders_vert[SHADER_VERT_IDX_ART], &shaders_frag[SHADER_FRAG_IDX_ART]],
+                [&shaders_vert[SHADER_VERT_IDX_MBOX], &shaders_frag[SHADER_FRAG_IDX_MBOX]],
             );
             let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
             let (vertices, indices, _) = Self::load_model(nobj);
@@ -273,8 +273,8 @@ impl VkApp {
             &descriptor_sets,
             // render cubemap after object for performance gain
             // (avoids rendering the parts occluded by the object)
-            // &[pipeline, pipeline_cubemap, pipeline_art],
-            &[pipeline_cubemap, pipeline_art],
+            // &[pipeline, pipeline_cubemap, pipeline_mbox],
+            &[pipeline_cubemap, pipeline_mbox],
         );
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device());
@@ -303,7 +303,7 @@ impl VkApp {
             descriptor_set_layout,
             pipeline,
             pipeline_cubemap,
-            pipeline_art,
+            pipeline_mbox,
             swapchain_framebuffers,
             command_pool,
             transient_command_pool,
@@ -1459,10 +1459,10 @@ impl VkApp {
         }
 
         let pipelines: &[Pipeline] = if self.show_cubemap {
-            // &[self.pipeline, self.pipeline_cubemap, self.pipeline_art]
-            &[self.pipeline_cubemap, self.pipeline_art]
+            // &[self.pipeline, self.pipeline_cubemap, self.pipeline_mbox]
+            &[self.pipeline_cubemap, self.pipeline_mbox]
         } else {
-            &[self.pipeline, self.pipeline_art]
+            &[self.pipeline, self.pipeline_mbox]
         };
         self.command_buffers = Self::create_and_register_command_buffers(
             device,
@@ -1733,24 +1733,24 @@ impl VkApp {
 
     pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
         let device = self.vk_context.device();
-        self.shaders_vert[SHADER_VERT_IDX_ART].reload(ShaderStage::Vertex)?;
-        self.shaders_frag[SHADER_FRAG_IDX_ART].reload(ShaderStage::Fragment)?;
+        self.shaders_vert[SHADER_VERT_IDX_MBOX].reload(ShaderStage::Vertex)?;
+        self.shaders_frag[SHADER_FRAG_IDX_MBOX].reload(ShaderStage::Fragment)?;
 
-        let geometry_art = self.pipeline_art.geometry.take();
+        let geometry_mbox = self.pipeline_mbox.geometry.take();
         unsafe {
-            self.pipeline_art.cleanup(device);
+            self.pipeline_mbox.cleanup(device);
         }
 
-        self.pipeline_art = Pipeline::new(
+        self.pipeline_mbox = Pipeline::new(
             device,
             self.swapchain_properties,
             ART_CULL_MODE,
             self.msaa_samples,
             self.render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_ART], &self.shaders_frag[SHADER_FRAG_IDX_ART]],
+            [&self.shaders_vert[SHADER_VERT_IDX_MBOX], &self.shaders_frag[SHADER_FRAG_IDX_MBOX]],
         );
-        self.pipeline_art.geometry = geometry_art;
+        self.pipeline_mbox.geometry = geometry_mbox;
 
         self.recreate_command_buffers();
         Ok(())
@@ -1771,7 +1771,7 @@ impl VkApp {
 
         let geometry = self.pipeline.geometry.take();
         let geometry_cubemap = self.pipeline_cubemap.geometry.take();
-        let geometry_art = self.pipeline_art.geometry.take();
+        let geometry_mbox = self.pipeline_mbox.geometry.take();
         self.cleanup_swapchain();
 
         let device = self.vk_context.device();
@@ -1807,16 +1807,16 @@ impl VkApp {
         );
         pipeline_cubemap.geometry = geometry_cubemap;
 
-        let mut pipeline_art = Pipeline::new(
+        let mut pipeline_mbox = Pipeline::new(
             device,
             properties,
             ART_CULL_MODE,
             self.msaa_samples,
             render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_ART], &self.shaders_frag[SHADER_FRAG_IDX_ART]],
+            [&self.shaders_vert[SHADER_VERT_IDX_MBOX], &self.shaders_frag[SHADER_FRAG_IDX_MBOX]],
         );
-        pipeline_art.geometry = geometry_art;
+        pipeline_mbox.geometry = geometry_mbox;
 
         let color_texture = Self::create_color_texture(
             &self.vk_context,
@@ -1852,7 +1852,7 @@ impl VkApp {
         self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_cubemap = pipeline_cubemap;
-        self.pipeline_art = pipeline_art;
+        self.pipeline_mbox = pipeline_mbox;
         self.color_texture = color_texture;
         self.depth_texture = depth_texture;
         self.swapchain_framebuffers = swapchain_framebuffers;
@@ -1870,7 +1870,7 @@ impl VkApp {
             }
             self.pipeline.cleanup(device);
             self.pipeline_cubemap.cleanup(device);
-            self.pipeline_art.cleanup(device);
+            self.pipeline_mbox.cleanup(device);
             device.destroy_render_pass(self.render_pass, None);
             for image_view in self.swapchain_image_views.iter() {
                 device.destroy_image_view(*image_view, None);
