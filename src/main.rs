@@ -182,7 +182,7 @@ impl ApplicationHandler for App {
                 let Some(vulkan) = self.vulkan.as_mut() else { return };
                 match (logical_key.as_ref(), pressed) {
                     (Key::Character("b"), true) => {
-                        vulkan.show_cubemap = !vulkan.show_cubemap;
+                        vulkan.toggle_cubemap();
                         vulkan.dirty_swapchain = true;
                     }
                     (Key::Character("c"), true) => {

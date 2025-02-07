@@ -10,11 +10,10 @@ use std::{
     ffi::CString,
 };
 
-#[derive(Copy, Clone)]
 pub struct Pipeline {
-    pub layout: vk::PipelineLayout,
-    pub pipeline: vk::Pipeline,
+    pipeline_and_layout: Option<(vk::Pipeline, vk::PipelineLayout)>,
     pub geometry: Option<Geometry>,
+    pub active: bool,
 }
 
 impl Pipeline {
@@ -38,15 +37,76 @@ impl Pipeline {
         );
 
         Self {
-            layout,
-            pipeline,
+            pipeline_and_layout: Some((pipeline, layout)),
             geometry: None,
+            active: true,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn recreate(
+        &mut self,
+        device: &Device,
+        swapchain_properties: SwapchainProperties,
+        cull_mode: vk::CullModeFlags,
+        msaa_samples: vk::SampleCountFlags,
+        render_pass: vk::RenderPass,
+        descriptor_set_layout: vk::DescriptorSetLayout,
+        shaders: [&Shader; 2],
+    ) {
+        let (pipeline, layout) = self.pipeline_and_layout.take()
+            .expect("pipeline must be initalized");
+        unsafe {
+            device.destroy_pipeline(pipeline, None);
+            device.destroy_pipeline_layout(layout, None);
+        }
+
+        let (pipeline, layout) = Self::create_pipeline(
+            device,
+            swapchain_properties,
+            cull_mode,
+            msaa_samples,
+            render_pass,
+            descriptor_set_layout,
+            shaders,
+        );
+        self.pipeline_and_layout = Some((pipeline, layout));
+    }
+
+    pub unsafe fn bind_to_cmd_buffer(
+        &self,
+        device: &Device,
+        buffer: vk::CommandBuffer,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) {
+        let (pip_pip, pip_layout) = self.get().expect("pipeline must be initalized");
+        device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, pip_pip);
+        let mut index_count = 0;
+        if let Some(g) = self.geometry {
+            device.cmd_bind_vertex_buffers(buffer, 0, &[g.vertex_buffer], &[0]);
+            device.cmd_bind_index_buffer(buffer, g.index_buffer, 0, vk::IndexType::UINT32);
+            index_count = g.index_count;
+        }
+        device.cmd_bind_descriptor_sets(
+            buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pip_layout,
+            0,
+            descriptor_sets,
+            &[],
+        );
+        device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0);
+    }
+
+    pub fn get(&self) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
+        self.pipeline_and_layout
+    }
+
     pub unsafe fn cleanup(&mut self, device: &Device) {
-        device.destroy_pipeline(self.pipeline, None);
-        device.destroy_pipeline_layout(self.layout, None);
+        let (pipeline, layout) = self.pipeline_and_layout.take()
+            .expect("pipeline must be initalized");
+        device.destroy_pipeline(pipeline, None);
+        device.destroy_pipeline_layout(layout, None);
         if let Some(g) = self.geometry.take() {
             g.cleanup(device);
         }
@@ -56,7 +116,7 @@ impl Pipeline {
         device: &Device,
         code: &[u32],
     ) -> Result<vk::ShaderModule, Box<dyn Error>> {
-        let create_info = vk::ShaderModuleCreateInfo::default().code(&code);
+        let create_info = vk::ShaderModuleCreateInfo::default().code(code);
         unsafe {
             Ok(device.create_shader_module(&create_info, None)?)
         }
@@ -193,5 +253,13 @@ impl Pipeline {
         };
 
         (pipeline, layout)
+    }
+}
+
+impl Drop for Pipeline {
+    fn drop(&mut self) {
+        if self.geometry.is_some() || self.pipeline_and_layout.is_some() {
+            panic!("Pipeline was not cleaned up before beeing dropped");
+        }
     }
 }
