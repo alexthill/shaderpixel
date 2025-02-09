@@ -54,11 +54,8 @@ impl Pipeline {
         descriptor_set_layout: vk::DescriptorSetLayout,
         shaders: [&Shader; 2],
     ) {
-        let (pipeline, layout) = self.pipeline_and_layout.take()
-            .expect("pipeline must be initalized");
-        unsafe {
-            device.destroy_pipeline(pipeline, None);
-            device.destroy_pipeline_layout(layout, None);
+        if self.pipeline_and_layout.is_some() {
+            panic!("pipeline must be cleaned before recreation");
         }
 
         let (pipeline, layout) = Self::create_pipeline(
@@ -103,12 +100,9 @@ impl Pipeline {
     }
 
     pub unsafe fn cleanup(&mut self, device: &Device) {
-        let (pipeline, layout) = self.pipeline_and_layout.take()
-            .expect("pipeline must be initalized");
-        device.destroy_pipeline(pipeline, None);
-        device.destroy_pipeline_layout(layout, None);
-        if let Some(g) = self.geometry.take() {
-            g.cleanup(device);
+        if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
+            device.destroy_pipeline(pipeline, None);
+            device.destroy_pipeline_layout(layout, None);
         }
     }
 

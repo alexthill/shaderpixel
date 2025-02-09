@@ -401,14 +401,7 @@ impl VkApp {
             preferred
         };
 
-        log::debug!(
-            "Creating swapchain.\n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresentMode: {:?}\n\tExtent: {:?}\n\tImageCount: {:?}",
-            format.format,
-            format.color_space,
-            present_mode,
-            extent,
-            image_count,
-        );
+        log::debug!("Creating swapchain.");
 
         let graphics = vk_context.graphics_queue_index();
         let present = vk_context.present_queue_index();
@@ -1740,9 +1733,9 @@ impl VkApp {
         }
 
         self.wait_gpu_idle();
+        self.cleanup_swapchain();
 
         let device = self.vk_context.device();
-
         let dimensions = [width, height];
         let (swapchain, swapchain_khr, properties, images) = Self::create_swapchain_and_images(
             &self.vk_context,
@@ -1828,6 +1821,9 @@ impl VkApp {
             for framebuffer in self.swapchain_framebuffers.iter() {
                 device.destroy_framebuffer(*framebuffer, None);
             }
+            for pipeline in self.pipelines.iter_mut() {
+                pipeline.cleanup(device);
+            }
             device.destroy_render_pass(self.render_pass, None);
             for image_view in self.swapchain_image_views.iter() {
                 device.destroy_image_view(*image_view, None);
@@ -1887,6 +1883,9 @@ impl Drop for VkApp {
         unsafe {
             for pipeline in self.pipelines.iter_mut() {
                 pipeline.cleanup(device);
+                if let Some(geometry) = pipeline.geometry.take() {
+                    geometry.cleanup(device);
+                }
             }
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
