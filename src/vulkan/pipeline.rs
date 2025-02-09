@@ -25,6 +25,7 @@ impl Pipeline {
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
         shaders: [&Shader; 2],
+        geometry: Geometry,
     ) -> Self {
         let (pipeline, layout) = Self::create_pipeline(
             device,
@@ -38,7 +39,7 @@ impl Pipeline {
 
         Self {
             pipeline_and_layout: Some((pipeline, layout)),
-            geometry: None,
+            geometry: Some(geometry),
             active: true,
         }
     }
@@ -55,7 +56,7 @@ impl Pipeline {
         shaders: [&Shader; 2],
     ) {
         if self.pipeline_and_layout.is_some() {
-            panic!("pipeline must be cleaned before recreation");
+            panic!("Pipeline must be cleaned before recreation");
         }
 
         let (pipeline, layout) = Self::create_pipeline(
@@ -78,12 +79,14 @@ impl Pipeline {
     ) {
         let (pip_pip, pip_layout) = self.get().expect("pipeline must be initalized");
         device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, pip_pip);
-        let mut index_count = 0;
-        if let Some(g) = self.geometry {
-            device.cmd_bind_vertex_buffers(buffer, 0, &[g.vertex_buffer], &[0]);
-            device.cmd_bind_index_buffer(buffer, g.index_buffer, 0, vk::IndexType::UINT32);
-            index_count = g.index_count;
-        }
+        let index_count = if let Some(geometry) = &self.geometry {
+            let (vertex_buffer, index_buffer, index_count) = geometry.get().unwrap();
+            device.cmd_bind_vertex_buffers(buffer, 0, &[vertex_buffer], &[0]);
+            device.cmd_bind_index_buffer(buffer, index_buffer, 0, vk::IndexType::UINT32);
+            index_count
+        } else {
+            0
+        };
         device.cmd_bind_descriptor_sets(
             buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -92,7 +95,7 @@ impl Pipeline {
             descriptor_sets,
             &[],
         );
-        device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0);
+        device.cmd_draw_indexed(buffer, index_count, 1, 0, 0, 0);
     }
 
     pub fn get(&self) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
@@ -101,6 +104,7 @@ impl Pipeline {
 
     pub unsafe fn cleanup(&mut self, device: &Device) {
         if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
+            log::debug!("cleaning Pipeline");
             device.destroy_pipeline(pipeline, None);
             device.destroy_pipeline_layout(layout, None);
         }
@@ -252,7 +256,7 @@ impl Pipeline {
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        if self.geometry.is_some() || self.pipeline_and_layout.is_some() {
+        if self.pipeline_and_layout.is_some() {
             panic!("Pipeline was not cleaned up before beeing dropped");
         }
     }

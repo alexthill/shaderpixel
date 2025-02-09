@@ -192,6 +192,14 @@ impl VkApp {
             .context("failed to load a fragment shader file")?;
 
         let (pipeline_main, model_extent) = {
+            let (vertices, indices, model_extent) = Self::load_model(nobj);
+            let geometry = Geometry::new(
+                &vk_context,
+                transient_command_pool,
+                graphics_queue,
+                &vertices,
+                &indices,
+            );
             let mut pipeline = Pipeline::new(
                 vk_context.device(),
                 properties,
@@ -200,60 +208,44 @@ impl VkApp {
                 render_pass,
                 descriptor_set_layout,
                 [&shaders_vert[SHADER_VERT_IDX_MAIN], &shaders_frag[SHADER_FRAG_IDX_MAIN]],
+                geometry,
             );
-            let (vertices, indices, model_extent) = Self::load_model(nobj);
-            pipeline.geometry = Some(Geometry::new(
-                &vk_context,
-                transient_command_pool,
-                graphics_queue,
-                &vertices,
-                &indices,
-            ));
             pipeline.active = false;
             (pipeline, model_extent)
         };
-        let pipeline_cube = {
-            let mut pipeline = Pipeline::new(
-                vk_context.device(),
-                properties,
-                vk::CullModeFlags::BACK,
-                msaa_samples,
-                render_pass,
-                descriptor_set_layout,
-                [&shaders_vert[SHADER_VERT_IDX_CUBE], &shaders_frag[SHADER_FRAG_IDX_CUBE]],
-            );
+
+        let geometry_skybox = {
             let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
             let (vertices, indices, _) = Self::load_model(nobj);
-            pipeline.geometry = Some(Geometry::new(
+            Geometry::new(
                 &vk_context,
                 transient_command_pool,
                 graphics_queue,
                 &vertices,
                 &indices,
-            ));
-            pipeline
+            )
         };
-        let pipeline_mbox = {
-            let mut pipeline = Pipeline::new(
-                vk_context.device(),
-                properties,
-                ART_CULL_MODE,
-                msaa_samples,
-                render_pass,
-                descriptor_set_layout,
-                [&shaders_vert[SHADER_VERT_IDX_MBOX], &shaders_frag[SHADER_FRAG_IDX_MBOX]],
-            );
-            let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
-            let (vertices, indices, _) = Self::load_model(nobj);
-            pipeline.geometry = Some(Geometry::new(
-                &vk_context,
-                transient_command_pool,
-                graphics_queue,
-                &vertices,
-                &indices,
-            ));
-            pipeline
-        };
+        let pipeline_cube = Pipeline::new(
+            vk_context.device(),
+            properties,
+            vk::CullModeFlags::BACK,
+            msaa_samples,
+            render_pass,
+            descriptor_set_layout,
+            [&shaders_vert[SHADER_VERT_IDX_CUBE], &shaders_frag[SHADER_FRAG_IDX_CUBE]],
+            geometry_skybox.clone(),
+        );
+        let pipeline_mbox = Pipeline::new(
+            vk_context.device(),
+            properties,
+            ART_CULL_MODE,
+            msaa_samples,
+            render_pass,
+            descriptor_set_layout,
+            [&shaders_vert[SHADER_VERT_IDX_MBOX], &shaders_frag[SHADER_FRAG_IDX_MBOX]],
+            geometry_skybox,
+        );
+
         let pipelines = vec![
             pipeline_main,
             pipeline_cube,

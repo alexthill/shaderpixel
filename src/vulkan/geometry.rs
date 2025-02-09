@@ -3,14 +3,16 @@ use super::context::VkContext;
 use super::structs::Vertex;
 
 use ash::{vk, Device};
+use std::rc::Rc;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Geometry {
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_memory: vk::DeviceMemory,
-    pub index_buffer: vk::Buffer,
-    pub index_buffer_memory: vk::DeviceMemory,
-    pub index_count: usize,
+    rc: Option<Rc<()>>,
+    vertex_buffer: vk::Buffer,
+    vertex_buffer_memory: vk::DeviceMemory,
+    index_buffer: vk::Buffer,
+    index_buffer_memory: vk::DeviceMemory,
+    index_count: u32,
 }
 
 impl Geometry {
@@ -37,19 +39,30 @@ impl Geometry {
         );
 
         Self {
+            rc: Some(Rc::new(())),
             vertex_buffer,
             vertex_buffer_memory,
             index_buffer,
             index_buffer_memory,
-            index_count: indices.len(),
+            index_count: indices.len() as _,
         }
     }
 
-    pub unsafe fn cleanup(self, device: &Device) {
-        device.free_memory(self.index_buffer_memory, None);
-        device.destroy_buffer(self.index_buffer, None);
-        device.free_memory(self.vertex_buffer_memory, None);
-        device.destroy_buffer(self.vertex_buffer, None);
+    pub fn get(&self) -> Option<(vk::Buffer, vk::Buffer, u32)> {
+        match self.rc {
+            Some(_) => Some((self.vertex_buffer, self.index_buffer, self.index_count)),
+            None => None,
+        }
+    }
+
+    pub unsafe fn cleanup(mut self, device: &Device) {
+        if self.rc.take().map(|rc| Rc::strong_count(&rc) == 1).unwrap_or(false) {
+            log::debug!("cleaning Geometry");
+            device.free_memory(self.index_buffer_memory, None);
+            device.destroy_buffer(self.index_buffer, None);
+            device.free_memory(self.vertex_buffer_memory, None);
+            device.destroy_buffer(self.vertex_buffer, None);
+        }
     }
 
     /// Create a buffer and its gpu memory and fill it.
@@ -105,5 +118,13 @@ impl Geometry {
         };
 
         (buffer, memory)
+    }
+}
+
+impl Drop for Geometry {
+    fn drop(&mut self) {
+        if self.rc.is_some() {
+            panic!("Geometry was not cleaned up before beeing dropped");
+        }
     }
 }
