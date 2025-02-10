@@ -7,7 +7,7 @@ use super::{
     geometry::Geometry,
     debug::*,
     pipeline::Pipeline,
-    structs::{Shaders, UniformBufferObject, Vertex},
+    structs::{PushConstants, Shaders, UniformBufferObject, Vertex},
     swapchain::{SwapchainProperties, SwapchainSupportDetails},
     texture::Texture,
 };
@@ -39,8 +39,6 @@ pub struct VkApp {
     pub view_matrix: Matrix4,
     pub model_matrix: Matrix4,
     pub texture_weight: f32,
-    initial_model_matrix: Matrix4,
-    model_extent: (Vector3, Vector3),
 
     vk_context: VkContext,
     graphics_queue: vk::Queue,
@@ -171,8 +169,8 @@ impl VkApp {
             ],
         ).unwrap();
 
-        let (pipeline_main, model_extent) = {
-            let (vertices, indices, model_extent) = Self::load_model(nobj);
+        let pipeline_main = {
+            let (vertices, indices, _) = Self::load_model(nobj);
             let geometry = Geometry::new(
                 &vk_context,
                 transient_command_pool,
@@ -180,18 +178,17 @@ impl VkApp {
                 &vertices,
                 &indices,
             );
-            let mut pipeline = Pipeline::new(
+            Pipeline::new(
                 vk_context.device(),
                 properties,
-                vk::CullModeFlags::NONE,
+                vk::CullModeFlags::BACK,
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
                 geometry,
                 [shaders.main_vert, shaders.main_frag],
-            )?;
-            pipeline.active = false;
-            (pipeline, model_extent)
+                None,
+            )?
         };
 
         let geometry_skybox = {
@@ -214,6 +211,7 @@ impl VkApp {
             descriptor_set_layout,
             geometry_skybox.clone(),
             [shaders.cube_vert, shaders.cube_frag],
+            None,
         )?;
         let pipeline_mbox = Pipeline::new(
             vk_context.device(),
@@ -224,6 +222,10 @@ impl VkApp {
             descriptor_set_layout,
             geometry_skybox,
             [shaders.mbox_vert, shaders.mbox_frag],
+            Some(PushConstants {
+                model: Matrix4::from_translation(Vector3::from([-2.5, 1.5, -0.5]))
+                    * Matrix4::from_scale(0.5),
+            }),
         )?;
 
         let pipelines = vec![
@@ -259,12 +261,7 @@ impl VkApp {
         Ok(Self {
             view_matrix: UniformBufferObject::view_matrix(),
             model_matrix: Matrix4::unit(),
-            initial_model_matrix: UniformBufferObject::model_matrix(
-                model_extent.0,
-                model_extent.1,
-            ),
             texture_weight: 0.,
-            model_extent,
             dirty_swapchain: false,
             vk_context,
             graphics_queue,
@@ -1648,12 +1645,7 @@ impl VkApp {
 
     pub fn load_new_model(&mut self, nobj: NormalizedObj) {
         let device = self.vk_context.device();
-        let (vertices, indices, model_extent) = Self::load_model(nobj);
-        self.initial_model_matrix = UniformBufferObject::model_matrix(
-            model_extent.0,
-            model_extent.1,
-        );
-        self.model_extent = model_extent;
+        let (vertices, indices, _) = Self::load_model(nobj);
 
         self.wait_gpu_idle();
 
@@ -1794,9 +1786,9 @@ impl VkApp {
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let aspect = self.get_extent().width as f32 / self.get_extent().height as f32;
         let ubo = UniformBufferObject {
-            model: self.model_matrix * self.initial_model_matrix,
+            model: self.model_matrix,
             view: self.view_matrix,
-            proj: math::perspective(Deg(75.0), aspect, 0.1, 20.0),
+            proj: math::perspective(Deg(75.0), aspect, 0.1, 200.0),
             texture_weight: self.texture_weight,
         };
         let ubos = [ubo];
@@ -1821,10 +1813,6 @@ impl VkApp {
     pub fn reset_ubo(&mut self) {
         self.view_matrix = UniformBufferObject::view_matrix();
         self.model_matrix = Matrix4::unit();
-        self.initial_model_matrix = UniformBufferObject::model_matrix(
-            self.model_extent.0,
-            self.model_extent.1,
-        );
     }
 
     pub fn toggle_cubemap(&mut self) {

@@ -1,7 +1,8 @@
 use shaderpixel::{
-    fs::{self, Carousel},
+    env_generator::generate_env,
+    fs::Carousel,
     math::{Deg, Matrix4, Vector3},
-    obj::NormalizedObj,
+    //obj::NormalizedObj,
     vulkan::{Shader, Shaders, VkApp},
 };
 
@@ -21,10 +22,6 @@ const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const TITLE: &str = "shaderpixel";
 const TEXTURE_WEIGHT_CHANGE_SPEED: f32 = 0.5; // change will take 2 secs from 0 to 1
-
-fn check_if_obj(path: &Path) -> bool {
-    path.extension().map(|ext| ext == "obj").unwrap_or_default()
-}
 
 fn check_if_image(path: &Path) -> bool {
     path.extension().map(|ext| ext == "jpg" || ext == "png").unwrap_or_default()
@@ -51,7 +48,6 @@ fn main() {
     let mut app = App {
         ..Default::default()
     };
-    app.model_carousel.set_dir("assets/models");
     app.image_carousel.set_dir("assets/images");
     event_loop.run_app(&mut app).unwrap();
 }
@@ -75,8 +71,6 @@ struct App {
     last_frame: Option<Instant>,
 
     pressed: KeyStates,
-    load_prev_model: bool,
-    load_next_model: bool,
     load_next_image: bool,
     reload_shaders: bool,
     is_left_clicked: bool,
@@ -87,7 +81,6 @@ struct App {
     is_fullscreen: bool,
     scroll_lines: f32,
 
-    model_carousel: Carousel,
     image_carousel: Carousel,
 }
 
@@ -98,10 +91,13 @@ impl App {
             .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT));
         let window = event_loop.create_window(window_attrs).context("Failed to create window")?;
 
-        let model_path = self.model_carousel.get_next(0, check_if_obj)
-            .context("Failed to find a model")?;
-        let nobj = NormalizedObj::from_reader(fs::load(model_path)?)?;
-
+        let podests = [
+            [-3., -1.], [2., -1.],
+            [-3., -6.], [2., -6.],
+        ];
+        let obj = generate_env([-10., -10.], [20, 20], &podests);
+        let nobj = obj.normalize()?;
+        //let nobj = NormalizedObj::from_reader(fs::load("assets/models/env.obj")?)?;
         let image_path = self.image_carousel.get_next(0, check_if_image)
             .context("Failed to find an image")?;
         let dims = [WIDTH, HEIGHT];
@@ -169,8 +165,6 @@ impl ApplicationHandler for App {
                     KeyCode::KeyD => self.pressed.right = pressed,
                     KeyCode::Space => self.pressed.up = pressed,
                     KeyCode::ShiftLeft => self.pressed.down = pressed,
-                    KeyCode::ArrowLeft if pressed => self.load_prev_model = true,
-                    KeyCode::ArrowRight if pressed => self.load_next_model = true,
                     KeyCode::ControlRight if pressed => self.reload_shaders = true,
                     _ => {}
                 }
@@ -290,28 +284,11 @@ impl ApplicationHandler for App {
             app.model_matrix = Matrix4::from_angle_x(Deg(y_ratio * 180.)) * app.model_matrix;
         }
         if self.is_right_clicked {
-            app.view_matrix = Matrix4::from_angle_y(Deg(x_ratio * 180.)) * app.view_matrix;
             app.view_matrix = Matrix4::from_angle_x(Deg(y_ratio * 180.)) * app.view_matrix;
+            app.view_matrix = Matrix4::from_angle_y(Deg(x_ratio * 180.)) * app.view_matrix;
         }
         self.cursor_delta = [0, 0];
 
-        if self.load_next_model || self.load_prev_model {
-            let offset = self.load_next_model as isize - self.load_prev_model as isize;
-            match self.model_carousel.get_next(offset, check_if_obj) {
-                Ok(path) => {
-                    fn get_nobj(path: &Path) -> Result<NormalizedObj, anyhow::Error> {
-                        Ok(NormalizedObj::from_reader(fs::load(path)?)?)
-                    }
-                    match get_nobj(&path) {
-                        Ok(nobj) => app.load_new_model(nobj),
-                        Err(err) => log::warn!("Failed to load model {}: {err}", path.display()),
-                    }
-                }
-                Err(err) => log::warn!("Failed to find a model: {err}"),
-            };
-            self.load_next_model = false;
-            self.load_prev_model = false;
-        }
         if self.load_next_image {
             match self.image_carousel.get_next(1, check_if_image) {
                 Ok(path) => {

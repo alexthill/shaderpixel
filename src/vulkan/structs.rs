@@ -1,4 +1,4 @@
-use crate::math::{Deg, Matrix4, Vector3};
+use crate::math::{Matrix4, Vector3};
 
 use ash::vk;
 use glslang::{
@@ -118,7 +118,6 @@ impl Vertex {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct UniformBufferObject {
     pub model: Matrix4,
@@ -138,17 +137,33 @@ impl UniformBufferObject {
 
     pub fn view_matrix() -> Matrix4 {
         Matrix4::look_at_rh(
-            Vector3::from([0., 0., 3.]),
-            Vector3::from([0., 0., 0.]),
+            Vector3::from([0., 1.5, 3.]),
+            Vector3::from([0., 1.5, 0.]),
             Vector3::from([0., 1., 0.]),
         )
     }
+}
 
-    pub fn model_matrix(extent_min: Vector3, extent_max: Vector3) -> Matrix4 {
-        let model_sizes = extent_max - extent_min;
-        let max_size = model_sizes.x().max(model_sizes.y()).max(model_sizes.z());
-        let scale = Matrix4::from_scale(1. / max_size);
-        let translate = Matrix4::from_translation(-extent_min - model_sizes / 2.);
-        Matrix4::from_angle_y(Deg(-90.)) * scale * translate
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct PushConstants {
+    pub model: Matrix4,
+}
+
+impl PushConstants {
+    pub fn get_push_constant_range() -> vk::PushConstantRange {
+        vk::PushConstantRange {
+            stage_flags: vk::ShaderStageFlags::VERTEX,
+            offset: 0,
+            size: size_of::<Self>() as _,
+        }
+    }
+}
+
+impl Default for PushConstants {
+    fn default() -> Self {
+        Self {
+            model: Matrix4::unit(),
+        }
     }
 }

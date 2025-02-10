@@ -9,7 +9,8 @@ layout(location = 0) out vec4 outColor;
 
 const int MAX_ITERS = 30;
 const int MAX_STEPS = 128;
-const float MAX_DIST = 10.0;
+const float INSIDE_SCALE = 4.5;
+const float MAX_DIST = INSIDE_SCALE * 2.0;
 
 // TODO make these configurable
 const float scaleFactor = 3.0;
@@ -66,7 +67,7 @@ int ray_march(vec3 pos, vec3 ray_dir, inout float dist) {
 
 void main() {
     vec3 ray_dir = normalize(fragPos - cameraPos);
-    vec3 ray_pos = (cameraPos + ray_dir * cameraDistToContainer) * 4.5;
+    vec3 ray_pos = (cameraPos + ray_dir * cameraDistToContainer) * INSIDE_SCALE;
 
     float dist = 0;
     int steps = ray_march(ray_pos, ray_dir, dist);

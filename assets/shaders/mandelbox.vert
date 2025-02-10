@@ -8,6 +8,10 @@ layout(binding = 0) uniform UniformBufferObject {
     float texture_weight;
 } ubo;
 
+layout(push_constant) uniform PushConstants {
+    mat4 model;
+} pcs;
+
 layout(location = 0) in vec3 vPosition;
 
 layout(location = 0) out vec3 fragPos;
@@ -17,8 +21,11 @@ layout(location = 2) out float cameraDistToContainer;
 void main() {
     fragPos = vPosition;
     cameraPos = -transpose(mat3(ubo.view)) * ubo.view[3].xyz;
-    // assuming container the unit cube
-    cameraDistToContainer = length(max(vec3(0.0), abs(cameraPos) - 1));
+    // apply the inverse of the model matrix to the camera, this way the
+    // conatiner can stay the unit cube which will make calulcations nicer
+    cameraPos = vec3(inverse(pcs.model) * vec4(cameraPos, 1.0));
+    // assuming container is the unit cube
+    cameraDistToContainer = length(max(vec3(0.0), abs(cameraPos) - 1.0));
 
-    gl_Position = ubo.proj * ubo.view * vec4(vPosition, 1.0);
+    gl_Position = ubo.proj * ubo.view * pcs.model * vec4(vPosition, 1.0);
 }

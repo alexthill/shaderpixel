@@ -1,6 +1,6 @@
 use super::{
     geometry::Geometry,
-    structs::{Shader, Vertex},
+    structs::{PushConstants, Shader, Vertex},
     swapchain::SwapchainProperties,
 };
 
@@ -17,6 +17,7 @@ pub struct Pipeline {
     pub active: bool,
     cull_mode: vk::CullModeFlags,
     shaders: [Shader; 2],
+    push_constants: Option<PushConstants>,
 }
 
 impl Pipeline {
@@ -29,6 +30,7 @@ impl Pipeline {
         descriptor_set_layout: vk::DescriptorSetLayout,
         geometry: Geometry,
         mut shaders: [Shader; 2],
+        push_constants: Option<PushConstants>,
     ) -> Result<Self, anyhow::Error> {
         shaders[0].ensure(ShaderStage::Vertex)?;
         shaders[1].ensure(ShaderStage::Fragment)?;
@@ -49,6 +51,7 @@ impl Pipeline {
             active: true,
             cull_mode,
             shaders,
+            push_constants,
         })
     }
 
@@ -100,6 +103,15 @@ impl Pipeline {
         } else {
             0
         };
+
+        unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+            ::core::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
+        }
+        if let Some(push_constants) = self.push_constants.as_ref() {
+            let cnsts = any_as_u8_slice(push_constants);
+            device.cmd_push_constants(buffer, pip_layout, vk::ShaderStageFlags::VERTEX, 0, cnsts);
+        }
+
         device.cmd_bind_descriptor_sets(
             buffer,
             vk::PipelineBindPoint::GRAPHICS,
@@ -235,7 +247,10 @@ impl Pipeline {
 
         let layout = {
             let layouts = [descriptor_set_layout];
-            let layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts);
+            let ranges = [PushConstants::get_push_constant_range()];
+            let layout_info = vk::PipelineLayoutCreateInfo::default()
+                .set_layouts(&layouts)
+                .push_constant_ranges(&ranges);
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
