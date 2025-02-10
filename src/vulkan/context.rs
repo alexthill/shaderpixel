@@ -188,7 +188,7 @@ impl VkContext {
         surface_khr: vk::SurfaceKHR,
     ) -> Option<(vk::PhysicalDevice, QueueFamiliesIndices)> {
         let devices = unsafe { instance.enumerate_physical_devices().ok()? };
-        let (device, queue_families_indices) = devices
+        let (device, _, queue_families_indices) = devices
             .into_iter()
             .filter_map(|device| {
                 if !Self::check_device_extension_support(instance, device) {
@@ -207,11 +207,18 @@ impl VkContext {
                     return None;
                 }
 
+                let props = unsafe { instance.get_physical_device_properties(device) };
+                let priority = match props.device_type {
+                    vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                    vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                    _ => 2,
+                };
+
                 let queue_families_indices =
                     Self::find_queue_families(instance, surface, surface_khr, device)?;
-                Some((device, queue_families_indices))
+                Some((device, priority, queue_families_indices))
             })
-            .next()?;
+            .min_by_key(|(_, priority, _)| *priority)?;
 
         let props = unsafe { instance.get_physical_device_properties(device) };
         log::debug!("Selected physical device: {:?}", unsafe {
