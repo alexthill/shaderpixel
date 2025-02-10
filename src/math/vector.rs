@@ -1,3 +1,5 @@
+use super::matrix:: Matrix;
+
 use std::ops;
 
 /// A fixed sized vector that is generic over its type and size.
@@ -33,6 +35,16 @@ impl<T: Copy, const N: usize> Vector<T, N> {
     }
 }
 
+impl<T: Copy + Default, const N: usize> Vector<T, N> {
+    pub fn resize<const P: usize>(self) -> Vector<T, P> {
+        let mut out = Vector::default();
+        for i in 0..P {
+            out[i] = self[i];
+        }
+        out
+    }
+}
+
 impl<T: ops::Mul<Output = T> + std::iter::Sum, const N: usize> Vector<T, N> {
     /// Calculates the dot product of two vectors.
     pub fn dot(self, rhs: Self) -> T {
@@ -63,7 +75,6 @@ impl<T> Vector<T, 3>
 where
     T: Copy + ops::Mul<Output = T> + ops::Sub<Output = T>,
 {
-    /// Calculates the cross product of two vectors.
     pub fn cross(self, rhs: Self) -> Self {
         Self { array: [
             self.array[1] * rhs.array[2] - self.array[2] * rhs.array[1],
@@ -119,6 +130,23 @@ impl<T: Copy + ops::Div<Output = T>, const N: usize> ops::Div<T> for Vector<T, N
     type Output = Self;
     fn div(self, rhs: T) -> Self::Output {
         Self { array: self.array.map(|x| x / rhs) }
+    }
+}
+
+impl<T, const M: usize, const N: usize> ops::Mul<Matrix<T, M, N>> for Vector<T, M>
+where
+    T: Default + Copy + ops::AddAssign + ops::Mul<Output = T>,
+{
+    type Output = Vector<T, N>;
+
+    fn mul(self, rhs: Matrix<T, M, N>) -> Self::Output {
+        let mut out = Self::Output::default();
+        for i in 0..N {
+            for k in 0..M {
+                out[i] += self[k] * rhs[k][i];
+            }
+        }
+        out
     }
 }
 
@@ -192,6 +220,13 @@ mod tests {
         let a = Vector::from([1, 2]);
         let b = Vector::from([3, 4]);
         assert_eq!(a - b, [-2, -2].into());
+    }
+
+    #[test]
+    fn mul_mat() {
+        let v = Vector::from([1, 2]);
+        let m = Matrix::from([[1, 2], [3, 4]]);
+        assert_eq!(v * m, [7, 10].into());
     }
 
     #[test]
