@@ -5,6 +5,7 @@ use super::{
 };
 
 use ash::{vk, Device};
+use glslang::ShaderStage;
 use std::{
     error::Error,
     ffi::CString,
@@ -14,6 +15,8 @@ pub struct Pipeline {
     pipeline_and_layout: Option<(vk::Pipeline, vk::PipelineLayout)>,
     pub geometry: Option<Geometry>,
     pub active: bool,
+    cull_mode: vk::CullModeFlags,
+    shaders: [Shader; 2],
 }
 
 impl Pipeline {
@@ -24,51 +27,61 @@ impl Pipeline {
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
-        shaders: [&Shader; 2],
         geometry: Geometry,
-    ) -> Self {
-        let (pipeline, layout) = Self::create_pipeline(
+        mut shaders: [Shader; 2],
+    ) -> Result<Self, anyhow::Error> {
+        shaders[0].ensure(ShaderStage::Vertex)?;
+        shaders[1].ensure(ShaderStage::Fragment)?;
+
+        let pipeline_and_layout = Self::create_pipeline(
             device,
             swapchain_properties,
             cull_mode,
             msaa_samples,
             render_pass,
             descriptor_set_layout,
-            shaders,
+            &shaders,
         );
 
-        Self {
-            pipeline_and_layout: Some((pipeline, layout)),
+        Ok(Self {
             geometry: Some(geometry),
+            pipeline_and_layout: Some(pipeline_and_layout),
             active: true,
-        }
+            cull_mode,
+            shaders,
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
+        self.shaders[0].reload(ShaderStage::Vertex)?;
+        self.shaders[1].reload(ShaderStage::Fragment)?;
+        Ok(())
+    }
+
     pub fn recreate(
         &mut self,
         device: &Device,
         swapchain_properties: SwapchainProperties,
-        cull_mode: vk::CullModeFlags,
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
-        shaders: [&Shader; 2],
     ) {
-        if self.pipeline_and_layout.is_some() {
-            panic!("Pipeline must be cleaned before recreation");
+        if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
+            unsafe {
+                device.destroy_pipeline(pipeline, None);
+                device.destroy_pipeline_layout(layout, None);
+            }
         }
 
-        let (pipeline, layout) = Self::create_pipeline(
+        self.pipeline_and_layout = Some(Self::create_pipeline(
             device,
             swapchain_properties,
-            cull_mode,
+            self.cull_mode,
             msaa_samples,
             render_pass,
             descriptor_set_layout,
-            shaders,
-        );
-        self.pipeline_and_layout = Some((pipeline, layout));
+            &self.shaders,
+        ));
     }
 
     pub unsafe fn bind_to_cmd_buffer(
@@ -127,12 +140,12 @@ impl Pipeline {
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
-        shaders: [&Shader; 2],
+        shaders: &[Shader; 2],
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let vertex_shader_module = Self::create_shader_module(device, shaders[0].data().unwrap())
-            .expect("failed to load vertex shader spv file");
+            .expect("failed to load vertex shader spv");
         let fragment_shader_module = Self::create_shader_module(device, shaders[1].data().unwrap())
-            .expect("failed to load fragment shader spv file");
+            .expect("failed to load fragment shader spv");
 
         let entry_point_name = CString::new("main").unwrap();
         let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::default()

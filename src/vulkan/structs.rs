@@ -12,6 +12,15 @@ use std::{
     path::Path,
 };
 
+pub struct Shaders {
+    pub main_vert: Shader,
+    pub main_frag: Shader,
+    pub cube_vert: Shader,
+    pub cube_frag: Shader,
+    pub mbox_vert: Shader,
+    pub mbox_frag: Shader,
+}
+
 #[derive(Debug, Clone)]
 pub struct Shader {
     #[allow(unused)]

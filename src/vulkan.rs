@@ -10,4 +10,4 @@ mod swapchain;
 mod texture;
 
 pub use app::VkApp;
-pub use structs::Shader;
+pub use structs::{Shader, Shaders};

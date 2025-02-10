@@ -7,7 +7,7 @@ use super::{
     geometry::Geometry,
     debug::*,
     pipeline::Pipeline,
-    structs::{Shader, UniformBufferObject, Vertex},
+    structs::{Shaders, UniformBufferObject, Vertex},
     swapchain::{SwapchainProperties, SwapchainSupportDetails},
     texture::Texture,
 };
@@ -19,7 +19,6 @@ use ash::{
     vk, Device, Entry, Instance,
 };
 use image::ImageReader;
-use glslang::ShaderStage;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     ffi::CString,
@@ -30,19 +29,9 @@ use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
-const SHADER_FRAG_IDX_MAIN: usize = 0;
-const SHADER_FRAG_IDX_CUBE: usize = 1;
-const SHADER_FRAG_IDX_MBOX: usize = 2;
-
-const SHADER_VERT_IDX_MAIN: usize = 0;
-const SHADER_VERT_IDX_CUBE: usize = 1;
-const SHADER_VERT_IDX_MBOX: usize = 2;
-
 const PIPELINE_IDX_MAIN: usize = 0;
 const PIPELINE_IDX_CUBE: usize = 1;
 const PIPELINE_IDX_MBOX: usize = 2;
-
-const ART_CULL_MODE: vk::CullModeFlags = vk::CullModeFlags::BACK;
 
 pub struct VkApp {
     pub dirty_swapchain: bool,
@@ -50,7 +39,6 @@ pub struct VkApp {
     pub view_matrix: Matrix4,
     pub model_matrix: Matrix4,
     pub texture_weight: f32,
-    pub cull_mode: vk::CullModeFlags,
     initial_model_matrix: Matrix4,
     model_extent: (Vector3, Vector3),
 
@@ -79,8 +67,6 @@ pub struct VkApp {
     descriptor_sets: Vec<vk::DescriptorSet>,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
-    shaders_vert: [Shader; 3],
-    shaders_frag: [Shader; 3],
 }
 
 impl VkApp {
@@ -89,8 +75,7 @@ impl VkApp {
         window_dimensions: [u32; 2],
         image_path: P,
         nobj: NormalizedObj,
-        mut shaders_vert: [Shader; 3],
-        mut shaders_frag: [Shader; 3],
+        shaders: Shaders,
     ) -> Result<Self, anyhow::Error> {
         log::debug!("Creating application.");
 
@@ -186,11 +171,6 @@ impl VkApp {
             ],
         ).unwrap();
 
-        shaders_vert.iter_mut().try_for_each(|shader| shader.ensure(ShaderStage::Vertex))
-            .context("failed to load a vertex shader file")?;
-        shaders_frag.iter_mut().try_for_each(|shader| shader.ensure(ShaderStage::Fragment))
-            .context("failed to load a fragment shader file")?;
-
         let (pipeline_main, model_extent) = {
             let (vertices, indices, model_extent) = Self::load_model(nobj);
             let geometry = Geometry::new(
@@ -207,9 +187,9 @@ impl VkApp {
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
-                [&shaders_vert[SHADER_VERT_IDX_MAIN], &shaders_frag[SHADER_FRAG_IDX_MAIN]],
                 geometry,
-            );
+                [shaders.main_vert, shaders.main_frag],
+            )?;
             pipeline.active = false;
             (pipeline, model_extent)
         };
@@ -232,19 +212,19 @@ impl VkApp {
             msaa_samples,
             render_pass,
             descriptor_set_layout,
-            [&shaders_vert[SHADER_VERT_IDX_CUBE], &shaders_frag[SHADER_FRAG_IDX_CUBE]],
             geometry_skybox.clone(),
-        );
+            [shaders.cube_vert, shaders.cube_frag],
+        )?;
         let pipeline_mbox = Pipeline::new(
             vk_context.device(),
             properties,
-            ART_CULL_MODE,
+            vk::CullModeFlags::BACK,
             msaa_samples,
             render_pass,
             descriptor_set_layout,
-            [&shaders_vert[SHADER_VERT_IDX_MBOX], &shaders_frag[SHADER_FRAG_IDX_MBOX]],
             geometry_skybox,
-        );
+            [shaders.mbox_vert, shaders.mbox_frag],
+        )?;
 
         let pipelines = vec![
             pipeline_main,
@@ -284,7 +264,6 @@ impl VkApp {
                 model_extent.1,
             ),
             texture_weight: 0.,
-            cull_mode: vk::CullModeFlags::NONE,
             model_extent,
             dirty_swapchain: false,
             vk_context,
@@ -312,8 +291,6 @@ impl VkApp {
             descriptor_sets,
             command_buffers,
             in_flight_frames,
-            shaders_vert,
-            shaders_frag,
         })
     }
 
@@ -1696,17 +1673,13 @@ impl VkApp {
 
     pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
         let device = self.vk_context.device();
-        self.shaders_vert[SHADER_VERT_IDX_MBOX].reload(ShaderStage::Vertex)?;
-        self.shaders_frag[SHADER_FRAG_IDX_MBOX].reload(ShaderStage::Fragment)?;
-
+        self.pipelines[PIPELINE_IDX_MBOX].reload_shaders()?;
         self.pipelines[PIPELINE_IDX_MBOX].recreate(
             device,
             self.swapchain_properties,
-            ART_CULL_MODE,
             self.msaa_samples,
             self.render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_MBOX], &self.shaders_frag[SHADER_FRAG_IDX_MBOX]],
         );
 
         self.recreate_command_buffers();
@@ -1741,29 +1714,23 @@ impl VkApp {
         self.pipelines[PIPELINE_IDX_MAIN].recreate(
             device,
             properties,
-            self.cull_mode,
             self.msaa_samples,
             render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_MAIN], &self.shaders_frag[SHADER_FRAG_IDX_MAIN]],
         );
         self.pipelines[PIPELINE_IDX_CUBE].recreate(
             device,
             properties,
-            vk::CullModeFlags::BACK,
             self.msaa_samples,
             render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_CUBE], &self.shaders_frag[SHADER_FRAG_IDX_CUBE]],
         );
         self.pipelines[PIPELINE_IDX_MBOX].recreate(
             device,
             properties,
-            ART_CULL_MODE,
             self.msaa_samples,
             render_pass,
             self.descriptor_set_layout,
-            [&self.shaders_vert[SHADER_VERT_IDX_MBOX], &self.shaders_frag[SHADER_FRAG_IDX_MBOX]],
         );
 
         let color_texture = Self::create_color_texture(

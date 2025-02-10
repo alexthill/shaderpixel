@@ -2,11 +2,10 @@ use shaderpixel::{
     fs::{self, Carousel},
     math::{Deg, Matrix4, Vector3},
     obj::NormalizedObj,
-    vulkan::{Shader, VkApp},
+    vulkan::{Shader, Shaders, VkApp},
 };
 
 use anyhow::Context;
-use ash::vk::CullModeFlags;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -106,23 +105,20 @@ impl App {
         let image_path = self.image_carousel.get_next(0, check_if_image)
             .context("Failed to find an image")?;
         let dims = [WIDTH, HEIGHT];
-        let shaders_vert = [
-            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?,
-            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
-            Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
-        ];
-        let shaders_frag = [
-            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
-            Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
-            Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
-        ];
+        let shaders = Shaders {
+            main_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?,
+            main_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
+            cube_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
+            cube_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
+            mbox_vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+            mbox_frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
+        };
         let vulkan = VkApp::new(
             &window,
             dims,
             &image_path,
             nobj,
-            shaders_vert,
-            shaders_frag,
+            shaders,
         )?;
 
         self.vulkan = Some(vulkan);
@@ -183,15 +179,6 @@ impl ApplicationHandler for App {
                 match (logical_key.as_ref(), pressed) {
                     (Key::Character("b"), true) => {
                         vulkan.toggle_cubemap();
-                        vulkan.dirty_swapchain = true;
-                    }
-                    (Key::Character("c"), true) => {
-                        vulkan.cull_mode = match vulkan.cull_mode {
-                            CullModeFlags::NONE => CullModeFlags::BACK,
-                            CullModeFlags::BACK => CullModeFlags::FRONT,
-                            CullModeFlags::FRONT => CullModeFlags::NONE,
-                            other => other,
-                        };
                         vulkan.dirty_swapchain = true;
                     }
                     (Key::Character("f"), true) => {
