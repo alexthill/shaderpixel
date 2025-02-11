@@ -259,7 +259,7 @@ impl VkApp {
         let in_flight_frames = Self::create_sync_objects(vk_context.device());
 
         Ok(Self {
-            view_matrix: UniformBufferObject::view_matrix(),
+            view_matrix: Matrix4::unit(),
             model_matrix: Matrix4::unit(),
             texture_weight: 0.,
             dirty_swapchain: false,
@@ -1811,7 +1811,6 @@ impl VkApp {
     }
 
     pub fn reset_ubo(&mut self) {
-        self.view_matrix = UniformBufferObject::view_matrix();
         self.model_matrix = Matrix4::unit();
     }
 

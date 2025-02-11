@@ -24,6 +24,14 @@ impl<T: Default> Default for Deg<T> {
     }
 }
 
+impl<T: ops::Neg> ops::Neg for Deg<T> {
+    type Output = Deg<T::Output>;
+
+    fn neg(self) -> Self::Output {
+        Deg(-self.0)
+    }
+}
+
 impl<T: ops::Add> ops::Add for Deg<T> {
     type Output = Deg<T::Output>;
 

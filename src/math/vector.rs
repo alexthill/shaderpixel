@@ -11,24 +11,34 @@ pub struct Vector<T, const N: usize> {
 
 impl<T: Copy, const N: usize> Vector<T, N> {
     /// Creates a vector filled with `value`.
-    pub fn new(value: T) -> Self {
+    pub const fn new(value: T) -> Self {
         Self { array: [value; N] }
     }
 
+    /// Creates a vector initialzed `values`.
+    pub const fn new_init(values: [T; N]) -> Self {
+        Self { array: values }
+    }
+
+    /// Gets the first component of a Vector with at least one dimension.
     pub fn x(&self) -> T {
         const { assert!(N > 0, "not enough dimensions") }
         self[0]
     }
+
+    /// Gets the second component of a Vector with at least two dimensions.
     pub fn y(&self) -> T {
         const { assert!(N > 1, "not enough dimensions") }
         self[1]
     }
 
+    /// Gets the third component of a Vector with at least three dimensions.
     pub fn z(&self) -> T {
         const { assert!(N > 2, "not enough dimensions") }
         self[2]
     }
 
+    /// Gets the fourth component of a Vector with at least four dimensions.
     pub fn w(&self) -> T {
         const { assert!(N > 3, "not enough dimensions") }
         self[3]
@@ -46,7 +56,6 @@ impl<T: Copy + Default, const N: usize> Vector<T, N> {
 }
 
 impl<T: ops::Mul<Output = T> + std::iter::Sum, const N: usize> Vector<T, N> {
-    /// Calculates the dot product of two vectors.
     pub fn dot(self, rhs: Self) -> T {
         self.array.into_iter()
             .zip(rhs.array)
@@ -123,6 +132,13 @@ impl<T: ops::SubAssign, const N: usize> ops::SubAssign for Vector<T, N> {
         for (a, b) in self.array.iter_mut().zip(rhs.array) {
             *a -= b;
         }
+    }
+}
+
+impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul<T> for Vector<T, N> {
+    type Output = Self;
+    fn mul(self, rhs: T) -> Self::Output {
+        Self { array: self.array.map(|x| x * rhs) }
     }
 }
 

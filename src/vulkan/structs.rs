@@ -1,4 +1,4 @@
-use crate::math::{Matrix4, Vector3};
+use crate::math::Matrix4;
 
 use ash::vk;
 use glslang::{
@@ -133,14 +133,6 @@ impl UniformBufferObject {
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-    }
-
-    pub fn view_matrix() -> Matrix4 {
-        Matrix4::look_at_rh(
-            Vector3::from([0., 1.5, 3.]),
-            Vector3::from([0., 1.5, 0.]),
-            Vector3::from([0., 1., 0.]),
-        )
     }
 }
 

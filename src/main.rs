@@ -1,7 +1,7 @@
 use shaderpixel::{
     env_generator::generate_env,
     fs::Carousel,
-    math::{Deg, Matrix4, Vector3},
+    math::{Deg, Matrix4, Vector3, Vector4},
     //obj::NormalizedObj,
     vulkan::{Shader, Shaders, VkApp},
 };
@@ -21,6 +21,7 @@ use std::time::Instant;
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const TITLE: &str = "shaderpixel";
+const START_POSITION: Vector3 = Vector3::new_init([0., 1.5, 3.]);
 const TEXTURE_WEIGHT_CHANGE_SPEED: f32 = 0.5; // change will take 2 secs from 0 to 1
 
 fn check_if_image(path: &Path) -> bool {
@@ -35,6 +36,7 @@ fn main() {
     println!("Mouse-Wheel: change movement speed");
     println!("WASD: move around");
     println!("Space and Left-Shift: move up and down");
+    println!("Left-Ctrl: enter fly mode");
     println!("Right-Ctrl: hot reload shaders");
     println!("B: toggle skybox");
     println!("R: reset camera and object");
@@ -46,6 +48,7 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let mut app = App {
+        position: START_POSITION,
         ..Default::default()
     };
     app.image_carousel.set_dir("assets/images");
@@ -80,6 +83,11 @@ struct App {
     tex_weight_change: f32,
     is_fullscreen: bool,
     scroll_lines: f32,
+
+    angle_yaw: Deg<f32>,
+    angle_pitch: Deg<f32>,
+    position: Vector3,
+    fly_mode: bool,
 
     image_carousel: Carousel,
 }
@@ -166,6 +174,7 @@ impl ApplicationHandler for App {
                     KeyCode::Space => self.pressed.up = pressed,
                     KeyCode::ShiftLeft => self.pressed.down = pressed,
                     KeyCode::ControlRight if pressed => self.reload_shaders = true,
+                    KeyCode::ControlLeft if pressed => self.fly_mode = !self.fly_mode,
                     _ => {}
                 }
 
@@ -192,6 +201,9 @@ impl ApplicationHandler for App {
                     }
                     (Key::Character("l"), true) => {
                         vulkan.reset_ubo();
+                        self.angle_yaw = Default::default();
+                        self.angle_pitch = Default::default();
+                        self.position = START_POSITION;
                         self.scroll_lines = 0.0;
                     }
                     (Key::Character("t"), true) => {
@@ -269,25 +281,36 @@ impl ApplicationHandler for App {
         let delta = elapsed.as_secs_f32() * (self.scroll_lines * 0.25).exp();
         self.last_frame = Some(Instant::now());
 
-        let translation = Vector3::from([
-            (self.pressed.left    as i8 - self.pressed.right    as i8) as f32 * delta,
-            (self.pressed.down    as i8 - self.pressed.up       as i8) as f32 * delta,
-            (self.pressed.forward as i8 - self.pressed.backward as i8) as f32 * delta,
-        ]);
-        app.view_matrix = Matrix4::from_translation(translation) * app.view_matrix;
-
         let extent = app.get_extent();
         let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
         let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
+
         if self.is_left_clicked {
             app.model_matrix = Matrix4::from_angle_y(Deg(x_ratio * 180.)) * app.model_matrix;
             app.model_matrix = Matrix4::from_angle_x(Deg(y_ratio * 180.)) * app.model_matrix;
         }
         if self.is_right_clicked {
-            app.view_matrix = Matrix4::from_angle_x(Deg(y_ratio * 180.)) * app.view_matrix;
-            app.view_matrix = Matrix4::from_angle_y(Deg(x_ratio * 180.)) * app.view_matrix;
+            self.angle_yaw += Deg(x_ratio * 180.);
+            self.angle_pitch += Deg(y_ratio * 180.);
         }
         self.cursor_delta = [0, 0];
+
+        let translation = Vector4::from([
+            (self.pressed.left    as i8 - self.pressed.right    as i8) as f32,
+            (self.pressed.down    as i8 - self.pressed.up       as i8) as f32,
+            (self.pressed.forward as i8 - self.pressed.backward as i8) as f32,
+            0.,
+        ]) * delta;
+        let rot = if self.fly_mode {
+            Matrix4::from_angle_y(-self.angle_yaw) * Matrix4::from_angle_x(-self.angle_pitch)
+        } else {
+            Matrix4::from_angle_y(-self.angle_yaw)
+        };
+        self.position += (-translation * rot).resize();
+
+        app.view_matrix = Matrix4::from_angle_x(self.angle_pitch)
+            * Matrix4::from_angle_y(self.angle_yaw)
+            * Matrix4::from_translation(-self.position);
 
         if self.load_next_image {
             match self.image_carousel.get_next(1, check_if_image) {
