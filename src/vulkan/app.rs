@@ -31,7 +31,7 @@ const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 const PIPELINE_IDX_MAIN: usize = 0;
 const PIPELINE_IDX_CUBE: usize = 1;
-const PIPELINE_IDX_MBOX: usize = 2;
+const PIPELINE_IDX_ART: usize = 2;
 
 pub struct VkApp {
     pub dirty_swapchain: bool,
@@ -73,7 +73,7 @@ impl VkApp {
         window_dimensions: [u32; 2],
         image_path: P,
         nobj: NormalizedObj,
-        shaders: Shaders,
+        mut shaders: Shaders,
     ) -> Result<Self, anyhow::Error> {
         log::debug!("Creating application.");
 
@@ -92,12 +92,8 @@ impl VkApp {
             .unwrap()
         };
 
-        let vk_context = VkContext::new(
-            entry,
-            instance,
-            surface,
-            surface_khr,
-        ).context("Failed to create vulkan context")?;
+        let vk_context = VkContext::new(entry, instance, surface, surface_khr)
+            .context("Failed to create vulkan context")?;
         let graphics_queue = unsafe {
             vk_context.device().get_device_queue(vk_context.graphics_queue_index(), 0)
         };
@@ -169,6 +165,34 @@ impl VkApp {
             ],
         ).unwrap();
 
+        for shader in shaders.shaders_art.iter_mut() {
+            shader.vert.ensure(glslang::ShaderStage::Vertex)?;
+            shader.frag.ensure(glslang::ShaderStage::Fragment)?;
+        }
+
+        let geometry_skybox = {
+            let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
+            let (vertices, indices, _) = Self::load_model(nobj);
+            Geometry::new(
+                &vk_context,
+                transient_command_pool,
+                graphics_queue,
+                &vertices,
+                &indices,
+            )
+        };
+        let geometry_quad = {
+            let nobj = NormalizedObj::from_reader(fs::load("assets/models/quad.obj")?)?;
+            let (vertices, indices, _) = Self::load_model(nobj);
+            Geometry::new(
+                &vk_context,
+                transient_command_pool,
+                graphics_queue,
+                &vertices,
+                &indices,
+            )
+        };
+
         let pipeline_main = {
             let (vertices, indices, _) = Self::load_model(nobj);
             let geometry = Geometry::new(
@@ -190,18 +214,6 @@ impl VkApp {
                 None,
             )?
         };
-
-        let geometry_skybox = {
-            let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
-            let (vertices, indices, _) = Self::load_model(nobj);
-            Geometry::new(
-                &vk_context,
-                transient_command_pool,
-                graphics_queue,
-                &vertices,
-                &indices,
-            )
-        };
         let pipeline_cube = Pipeline::new(
             vk_context.device(),
             properties,
@@ -213,26 +225,27 @@ impl VkApp {
             [shaders.cube_vert, shaders.cube_frag],
             None,
         )?;
-        let pipeline_mbox = Pipeline::new(
-            vk_context.device(),
-            properties,
-            vk::CullModeFlags::BACK,
-            msaa_samples,
-            render_pass,
-            descriptor_set_layout,
-            geometry_skybox,
-            [shaders.mbox_vert, shaders.mbox_frag],
-            Some(PushConstants {
-                model: Matrix4::from_translation(Vector3::from([-2.5, 1.5, -0.5]))
-                    * Matrix4::from_scale(0.5),
-            }),
-        )?;
+        let mut pipelines = vec![pipeline_main, pipeline_cube];
+        for shader in shaders.shaders_art {
+            let pipeline = Pipeline::new(
+                vk_context.device(),
+                properties,
+                vk::CullModeFlags::BACK,
+                msaa_samples,
+                render_pass,
+                descriptor_set_layout,
+                if shader.is_3d { geometry_skybox.clone() } else { geometry_quad.clone() },
+                [shader.vert, shader.frag],
+                Some(PushConstants {
+                    model: shader.model_matrix,
+                }),
+            )?;
+            pipelines.push(pipeline);
+        }
 
-        let pipelines = vec![
-            pipeline_main,
-            pipeline_cube,
-            pipeline_mbox,
-        ];
+        // we need to call cleanup on these, else dropping them will panic
+        unsafe { geometry_skybox.cleanup(vk_context.device()); }
+        unsafe { geometry_quad.cleanup(vk_context.device()); }
 
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(&vk_context, images.len());
@@ -1537,12 +1550,12 @@ impl VkApp {
         unsafe { self.vk_context.device().device_wait_idle().unwrap() };
     }
 
-    /// Draws a frame.
+    /// Draws a frame. Takes as argument the time passed in seconds as f32.
     ///
     /// #Returns
     ///
     /// True if the swapchain is dirty and needs to be recreated.
-    pub fn draw_frame(&mut self) -> bool {
+    pub fn draw_frame(&mut self, time: f32) -> bool {
         log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
@@ -1574,7 +1587,7 @@ impl VkApp {
         // it is important to only reset the fence when we know that we are going to do work
         unsafe { self.vk_context.device().reset_fences(&wait_fences).unwrap() };
 
-        self.update_uniform_buffers(image_index);
+        self.update_uniform_buffers(image_index, time);
 
         let device = self.vk_context.device();
         let wait_semaphores = [image_available_semaphore];
@@ -1644,13 +1657,12 @@ impl VkApp {
     }
 
     pub fn load_new_model(&mut self, nobj: NormalizedObj) {
-        let device = self.vk_context.device();
         let (vertices, indices, _) = Self::load_model(nobj);
 
         self.wait_gpu_idle();
 
-        if let Some(g) = self.pipelines[PIPELINE_IDX_MAIN].geometry.take() {
-            unsafe { g.cleanup(device) };
+        if let Some(geometry) = self.pipelines[PIPELINE_IDX_MAIN].geometry.take() {
+            unsafe { geometry.cleanup(self.vk_context.device()) };
         }
         self.pipelines[PIPELINE_IDX_MAIN].geometry = Some(Geometry::new(
             &self.vk_context,
@@ -1664,16 +1676,18 @@ impl VkApp {
     }
 
     pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
-        let device = self.vk_context.device();
-        self.pipelines[PIPELINE_IDX_MBOX].reload_shaders()?;
-        self.pipelines[PIPELINE_IDX_MBOX].recreate(
-            device,
-            self.swapchain_properties,
-            self.msaa_samples,
-            self.render_pass,
-            self.descriptor_set_layout,
-        );
+        self.wait_gpu_idle();
 
+        for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
+            pipeline.reload_shaders()?;
+            pipeline.recreate(
+                self.vk_context.device(),
+                self.swapchain_properties,
+                self.msaa_samples,
+                self.render_pass,
+                self.descriptor_set_layout,
+            );
+        }
         self.recreate_command_buffers();
         Ok(())
     }
@@ -1703,27 +1717,15 @@ impl VkApp {
         let render_pass =
             Self::create_render_pass(device, properties, self.msaa_samples, self.depth_format);
 
-        self.pipelines[PIPELINE_IDX_MAIN].recreate(
-            device,
-            properties,
-            self.msaa_samples,
-            render_pass,
-            self.descriptor_set_layout,
-        );
-        self.pipelines[PIPELINE_IDX_CUBE].recreate(
-            device,
-            properties,
-            self.msaa_samples,
-            render_pass,
-            self.descriptor_set_layout,
-        );
-        self.pipelines[PIPELINE_IDX_MBOX].recreate(
-            device,
-            properties,
-            self.msaa_samples,
-            render_pass,
-            self.descriptor_set_layout,
-        );
+        for pipeline in self.pipelines.iter_mut() {
+            pipeline.recreate(
+                device,
+                properties,
+                self.msaa_samples,
+                render_pass,
+                self.descriptor_set_layout,
+            );
+        }
 
         let color_texture = Self::create_color_texture(
             &self.vk_context,
@@ -1783,13 +1785,14 @@ impl VkApp {
         }
     }
 
-    fn update_uniform_buffers(&mut self, current_image: u32) {
+    fn update_uniform_buffers(&mut self, current_image: u32, time: f32) {
         let aspect = self.get_extent().width as f32 / self.get_extent().height as f32;
         let ubo = UniformBufferObject {
             model: self.model_matrix,
             view: self.view_matrix,
             proj: math::perspective(Deg(75.0), aspect, 0.1, 200.0),
             texture_weight: self.texture_weight,
+            time,
         };
         let ubos = [ubo];
 

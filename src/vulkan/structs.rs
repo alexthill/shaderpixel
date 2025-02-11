@@ -17,8 +17,14 @@ pub struct Shaders {
     pub main_frag: Shader,
     pub cube_vert: Shader,
     pub cube_frag: Shader,
-    pub mbox_vert: Shader,
-    pub mbox_frag: Shader,
+    pub shaders_art: Vec<ShaderArt>,
+}
+
+pub struct ShaderArt {
+    pub is_3d: bool,
+    pub vert: Shader,
+    pub frag: Shader,
+    pub model_matrix: Matrix4,
 }
 
 #[derive(Debug, Clone)]
@@ -50,33 +56,34 @@ impl Shader {
     }
 
     pub fn reload(&mut self, stage: ShaderStage) -> Result<(), anyhow::Error> {
-        self.data = None;
-        self.ensure(stage)
+        let input_path = self.path
+            .as_ref()
+            .expect("shader must have a path set to load it")
+            .to_str()
+            .unwrap();
+        log::debug!("compiling shader {input_path} of stage {stage:?}");
+
+        let source = std::fs::read_to_string(input_path)?.into();
+        let compiler = Compiler::acquire().unwrap();
+        let input = ShaderInput::new(
+            &source,
+            stage,
+            &CompilerOptions::default(),
+            None,
+            None,
+        )?;
+        let shader = compiler.create_shader(input)?;
+        let data = shader.compile()?;
+        self.data = Some(data.into());
+        Ok(())
     }
 
     pub fn ensure(&mut self, stage: ShaderStage) -> Result<(), anyhow::Error> {
         if self.data.is_none() {
-            let input_path = self.path
-                .as_ref()
-                .expect("shader must have a path set to load it")
-                .to_str()
-                .unwrap();
-            log::debug!("compiling shader {input_path} of stage {stage:?}");
-
-            let source = std::fs::read_to_string(input_path)?.into();
-            let compiler = Compiler::acquire().unwrap();
-            let input = ShaderInput::new(
-                &source,
-                stage,
-                &CompilerOptions::default(),
-                None,
-                None,
-            )?;
-            let shader = compiler.create_shader(input)?;
-            let data = shader.compile()?;
-            self.data = Some(data.into());
+            self.reload(stage)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 }
 
@@ -124,6 +131,7 @@ pub struct UniformBufferObject {
     pub view: Matrix4,
     pub proj: Matrix4,
     pub texture_weight: f32,
+    pub time: f32,
 }
 
 impl UniformBufferObject {

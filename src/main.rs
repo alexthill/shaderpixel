@@ -1,9 +1,8 @@
 use shaderpixel::{
-    env_generator::generate_env,
+    env_generator::default_env,
     fs::Carousel,
     math::{Deg, Matrix4, Vector3, Vector4},
-    //obj::NormalizedObj,
-    vulkan::{Shader, Shaders, VkApp},
+    vulkan::{Shader, Shaders, ShaderArt, VkApp},
 };
 
 use anyhow::Context;
@@ -72,6 +71,7 @@ struct App {
 
     fps: Option<(Instant, u32)>,
     last_frame: Option<Instant>,
+    time: f32, // time passed since app start in seconds
 
     pressed: KeyStates,
     load_next_image: bool,
@@ -99,12 +99,7 @@ impl App {
             .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT));
         let window = event_loop.create_window(window_attrs).context("Failed to create window")?;
 
-        let podests = [
-            [-3., -1.], [2., -1.],
-            [-3., -6.], [2., -6.],
-        ];
-        let obj = generate_env([-10., -10.], [20, 20], &podests);
-        let nobj = obj.normalize()?;
+        let nobj = default_env().normalize()?;
         //let nobj = NormalizedObj::from_reader(fs::load("assets/models/env.obj")?)?;
         let image_path = self.image_carousel.get_next(0, check_if_image)
             .context("Failed to find an image")?;
@@ -114,8 +109,31 @@ impl App {
             main_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
             cube_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
             cube_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
-            mbox_vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
-            mbox_frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
+            shaders_art: vec![
+                ShaderArt {
+                    is_3d: true,
+                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
+                    model_matrix: Matrix4::from_translation([-2.5, 1.5, -0.5].into())
+                        * Matrix4::from_scale(0.5),
+                },
+                ShaderArt {
+                    is_3d: false,
+                    vert: Shader::new::<PathBuf>("assets/shaders/art2d.vert".into()),
+                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbrot.frag".into()),
+                    model_matrix: Matrix4::from_translation([5.99, 1.5, -1.5].into())
+                        * Matrix4::from_scale(0.5)
+                        * Matrix4::from_angle_y(Deg(90.)),
+                },
+                ShaderArt {
+                    is_3d: false,
+                    vert: Shader::new::<PathBuf>("assets/shaders/art2d.vert".into()),
+                    frag: Shader::new::<PathBuf>("assets/shaders/cat.frag".into()),
+                    model_matrix: Matrix4::from_translation([5.99, 1.5, -4.5].into())
+                        * Matrix4::from_scale(0.5)
+                        * Matrix4::from_angle_y(Deg(90.)),
+                },
+            ],
         };
         let vulkan = VkApp::new(
             &window,
@@ -280,6 +298,7 @@ impl ApplicationHandler for App {
         let elapsed = self.last_frame.map(|instant| instant.elapsed()).unwrap_or_default();
         let delta = elapsed.as_secs_f32() * (self.scroll_lines * 0.25).exp();
         self.last_frame = Some(Instant::now());
+        self.time += elapsed.as_secs_f32();
 
         let extent = app.get_extent();
         let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
@@ -300,7 +319,7 @@ impl ApplicationHandler for App {
             (self.pressed.down    as i8 - self.pressed.up       as i8) as f32,
             (self.pressed.forward as i8 - self.pressed.backward as i8) as f32,
             0.,
-        ]) * delta;
+        ]) * delta * 2.;
         let rot = if self.fly_mode {
             Matrix4::from_angle_y(-self.angle_yaw) * Matrix4::from_angle_x(-self.angle_pitch)
         } else {
@@ -334,7 +353,7 @@ impl ApplicationHandler for App {
 
         app.texture_weight = (app.texture_weight + self.tex_weight_change * delta).clamp(0., 1.);
 
-        app.dirty_swapchain = app.draw_frame();
+        app.dirty_swapchain = app.draw_frame(self.time);
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
