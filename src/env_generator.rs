@@ -42,7 +42,7 @@ fn generate_env(
         for z in 0..2 {
             for x in 0..2 {
                 vertices.push([podest[0] + x as f32, 0., podest[1] + z as f32]);
-                vertices.push([podest[0] + x as f32, 0.99, podest[1] + z as f32]);
+                vertices.push([podest[0] + x as f32, 1., podest[1] + z as f32]);
             }
         }
         faces.push(indices_to_face([vidx + 1, vidx + 5, vidx + 7, vidx + 3]));

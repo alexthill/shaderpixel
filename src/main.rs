@@ -109,14 +109,8 @@ impl App {
             main_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
             cube_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
             cube_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
+            // draw 2D art before 3D so that it can be seen through transparent stuff
             shaders_art: vec![
-                ShaderArt {
-                    is_3d: true,
-                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
-                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
-                    model_matrix: Matrix4::from_translation([-2.5, 1.5, -0.5].into())
-                        * Matrix4::from_scale(0.5),
-                },
                 ShaderArt {
                     is_3d: false,
                     vert: Shader::new::<PathBuf>("assets/shaders/art2d.vert".into()),
@@ -132,6 +126,20 @@ impl App {
                     model_matrix: Matrix4::from_translation([5.99, 1.5, -4.5].into())
                         * Matrix4::from_scale(0.5)
                         * Matrix4::from_angle_y(Deg(90.)),
+                },
+                ShaderArt {
+                    is_3d: true,
+                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
+                    model_matrix: Matrix4::from_translation([-2.5, 1.51, -0.5].into())
+                        * Matrix4::from_scale(0.5),
+                },
+                ShaderArt {
+                    is_3d: true,
+                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+                    frag: Shader::new::<PathBuf>("assets/shaders/mengersponge.frag".into()),
+                    model_matrix: Matrix4::from_translation([2.5, 1.51, -0.5].into())
+                        * Matrix4::from_scale(0.5),
                 },
             ],
         };

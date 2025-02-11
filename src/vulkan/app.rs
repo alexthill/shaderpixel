@@ -156,8 +156,8 @@ impl VkApp {
             command_pool,
             graphics_queue,
             [
-                "assets/cubemap/right.png",
                 "assets/cubemap/left.png",
+                "assets/cubemap/right.png",
                 "assets/cubemap/top.png",
                 "assets/cubemap/bottom.png",
                 "assets/cubemap/back.png",
