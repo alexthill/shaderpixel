@@ -9,21 +9,24 @@ layout(location = 2) in float cameraDistToContainer;
 
 layout(location = 0) out vec4 outColor;
 
+const int MENGER_DEPTH = 2;
+const vec4 CONTAINER_COLOR = vec4(0.0, 0.0, 0.0, 0.4);
+
 // Calculates the intersections of the cube defined by the corners `c1` and `c2`
 // and the ray from `pos` in direction `dir`. It must be `c1` <= `c2`.
 // Returns if there is indeed an intersection.
-// Sets `far` to the far intersection point and `pos` to the near one if
-// `pos` is not inside the cube and there are two intersections.
-bool intersect_cube(vec3 c1, vec3 c2, vec3 dir, inout vec3 pos, out vec3 far) {
-    vec2 intersects;
-    int intersect_count = 0;
+// The distances from `pos` to the intersections will be storted sorted in `dists`.
+// One of the distances may be negative or zero if inside the cube.
+bool intersect_cube(vec3 c1, vec3 c2, vec3 dir, vec3 pos, out vec2 dists) {
+    dists = vec2(0.0);
+    bool intersects = false;
     vec3 ts = (c1 - pos) / dir;
     for (int i = 0; i < 3; ++i) {
         vec3 p = pos + ts[i] * dir;
         bool inside = ts[i] >= 0.0 && all(lessThan(c1 - EPS, p)) && all(lessThan(p, c2 + EPS));
         if (inside) {
-            intersects[intersect_count] = ts[i];
-            intersect_count += 1;
+            dists[int(intersects)] = ts[i];
+            intersects = true;
         }
     }
     ts = (c2 - pos) / dir;
@@ -31,47 +34,70 @@ bool intersect_cube(vec3 c1, vec3 c2, vec3 dir, inout vec3 pos, out vec3 far) {
         vec3 p = pos + ts[i] * dir;
         bool inside = ts[i] >= 0.0 && all(lessThan(c1 - EPS, p)) && all(lessThan(p, c2 + EPS));
         if (inside) {
-            intersects[intersect_count] = ts[i];
-            intersect_count += 1;
+            dists[int(intersects)] = ts[i];
+            intersects = true;
         }
     }
-    if (intersect_count == 0) {
+    if (!intersects) {
         return false;
     }
-    if (intersect_count == 1) {
-        far = pos + intersects[0] * dir;
-        return true;
-    }
-    if (intersects[0] < intersects[1]) {
-        far = pos + intersects[1] * dir;
-        pos += intersects[0] * dir;
-    } else {
-        far = pos + intersects[0] * dir;
-        pos += intersects[1] * dir;
+    dists = vec2(min(dists[0], dists[1]), max(dists[0], dists[1]));
+    return true;
+}
+
+bool shrink(vec3 pos, inout float size, inout vec3 corner) {
+    // assuming the size of the sponge is strictly between 1 and 3
+    const float min_size = pow(3.0, -float(MENGER_DEPTH - 1));
+    while (size > min_size) {
+        float third = size / 3.0;
+        vec3 thirds = step(corner + third, pos) + step(corner + 2.0 * third, pos);
+        bvec3 in_middle = equal(thirds, vec3(1.0));
+
+        corner += third * thirds;
+        size = third;
+
+        if (int(in_middle[0]) + int(in_middle[1]) + int(in_middle[2]) >= 2) {
+            return false;
+        }
     }
     return true;
 }
 
-bool ray_march(vec3 corner, float size, vec3 dir, inout vec3 pos) {
-    float third = size / 3.0;
-    vec3 corner2 = corner + size;
-    vec3 far;
-    bool intersects = intersect_cube(corner, corner2, dir, pos, far);
-    if (!intersects) {
-        return false;
+vec4 menger(vec3 corner_start, float size_start, vec3 dir, vec3 pos) {
+    for (int i = 0; i < MENGER_DEPTH * 4; ++i) {
+        float size = size_start;
+        vec3 corner = corner_start;
+        if (shrink(pos, size, corner)) {
+            return vec4(normalize(pos) * 0.5 + 0.5, 1.0);
+        }
+
+        vec2 dists;
+        bool intersects = intersect_cube(corner, corner + size, dir, pos, dists);
+        if (!intersects) {
+            // this should not happen
+            return vec4(1.0);
+        }
+
+        // prevent floating point precision artefacts by moving EPS into cube
+        pos += (dists[1] + EPS) * dir;
+
+        if (any(lessThan(pos, corner_start)) || any(lessThan(corner_start + size_start, pos))) {
+            return CONTAINER_COLOR;
+        }
     }
-    bvec3 in_third = notEqual(vec3(0.0), step(corner + third, pos) * step(pos, corner2 - third));
-    return int(in_third[0]) + int(in_third[1]) + int(in_third[2]) < 2;
+    return CONTAINER_COLOR;
 }
 
 void main() {
     vec3 dir = normalize(fragPos - cameraPos);
-    vec3 pos = cameraPos;
-    bool intersects = ray_march(vec3(-0.75), 1.5, dir, pos);
+    vec2 dists;
+    bool intersects = intersect_cube(vec3(-0.75), vec3(0.75), dir, cameraPos, dists);
 
-    if (intersects) {
-        outColor = vec4(normalize(pos) * 0.5 + 0.5, 1.0);
+    if (!intersects) {
+        outColor = CONTAINER_COLOR;
     } else {
-        outColor = vec4(0.0, 0.0, 0.0, 0.4);
+        float dist_to_cube = dists[0] < 0.0 ? dists[1] : dists[0];
+        vec3 pos = cameraPos + dist_to_cube * dir;
+        outColor = menger(vec3(-0.75), 1.5, dir, pos);
     }
 }
