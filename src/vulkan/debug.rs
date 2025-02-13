@@ -8,7 +8,7 @@ use std::{
 };
 
 #[cfg(debug_assertions)]
-pub const ENABLE_VALIDATION_LAYERS: bool = false;
+pub const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
 pub const ENABLE_VALIDATION_LAYERS: bool = false;
 

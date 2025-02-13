@@ -1,4 +1,4 @@
-use crate::math::Matrix4;
+use crate::math::{Matrix4, Vector2};
 
 use ash::vk;
 use glslang::{
@@ -130,6 +130,7 @@ pub struct UniformBufferObject {
     pub model: Matrix4,
     pub view: Matrix4,
     pub proj: Matrix4,
+    pub resolution: Vector2,
     pub texture_weight: f32,
     pub time: f32,
 }
@@ -140,7 +141,7 @@ impl UniformBufferObject {
             .binding(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
     }
 }
 

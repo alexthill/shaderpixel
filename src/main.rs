@@ -129,14 +129,14 @@ impl App {
                 },
                 ShaderArt {
                     is_3d: true,
-                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+                    vert: Shader::new::<PathBuf>("assets/shaders/art3d.vert".into()),
                     frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
                     model_matrix: Matrix4::from_translation([-2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
                 },
                 ShaderArt {
                     is_3d: true,
-                    vert: Shader::new::<PathBuf>("assets/shaders/mandelbox.vert".into()),
+                    vert: Shader::new::<PathBuf>("assets/shaders/art3d.vert".into()),
                     frag: Shader::new::<PathBuf>("assets/shaders/mengersponge.frag".into()),
                     model_matrix: Matrix4::from_translation([2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
@@ -308,7 +308,7 @@ impl ApplicationHandler for App {
         self.last_frame = Some(Instant::now());
         self.time += elapsed.as_secs_f32();
 
-        let extent = app.get_extent();
+        let extent = window.inner_size();
         let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
         let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
 

@@ -1,5 +1,5 @@
 use crate::fs;
-use crate::math::{self, Deg, Matrix4, Vector3};
+use crate::math::{self, Deg, Matrix4, Vector2, Vector3};
 use crate::obj::NormalizedObj;
 use super::{
     buffer, cmd,
@@ -1629,6 +1629,7 @@ impl VkApp {
         log::info!("Loading image {:?}", path.as_ref().as_os_str());
         self.wait_gpu_idle();
 
+        self.textures[0].destroy(self.vk_context.device());
         let texture = Self::create_texture_image(
             &self.vk_context,
             self.command_pool,
@@ -1652,6 +1653,7 @@ impl VkApp {
             unsafe { device.update_descriptor_sets(&[sampler_descriptor_write], &[]) }
         }
 
+        self.textures[0] = texture;
         self.recreate_command_buffers();
         Ok(())
     }
@@ -1786,10 +1788,12 @@ impl VkApp {
     }
 
     fn update_uniform_buffers(&mut self, current_image: u32, time: f32) {
-        let aspect = self.get_extent().width as f32 / self.get_extent().height as f32;
+        let extent = self.swapchain_properties.extent;
+        let aspect = extent.width as f32 / extent.height as f32;
         let ubo = UniformBufferObject {
             model: self.model_matrix,
             view: self.view_matrix,
+            resolution: Vector2::from([extent.width as f32, extent.height as f32]),
             proj: math::perspective(Deg(75.0), aspect, 0.1, 200.0),
             texture_weight: self.texture_weight,
             time,
@@ -1807,10 +1811,6 @@ impl VkApp {
             align.copy_from_slice(&ubos);
             device.unmap_memory(buffer_mem);
         }
-    }
-
-    pub fn get_extent(&self) -> vk::Extent2D {
-        self.swapchain_properties.extent
     }
 
     pub fn reset_ubo(&mut self) {
