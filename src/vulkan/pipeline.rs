@@ -1,13 +1,13 @@
 use super::{
     geometry::Geometry,
-    structs::{PushConstants, Shader, Vertex},
+    shader::Shader,
+    structs::{PushConstants, Vertex},
     swapchain::SwapchainProperties,
 };
 
 use ash::{vk, Device};
 use glslang::ShaderStage;
 use std::{
-    error::Error,
     ffi::CString,
 };
 
@@ -32,8 +32,8 @@ impl Pipeline {
         mut shaders: [Shader; 2],
         push_constants: Option<PushConstants>,
     ) -> Result<Self, anyhow::Error> {
-        shaders[0].ensure(ShaderStage::Vertex)?;
-        shaders[1].ensure(ShaderStage::Fragment)?;
+        shaders[0].ensure(device, ShaderStage::Vertex)?;
+        shaders[1].ensure(device, ShaderStage::Fragment)?;
 
         let pipeline_and_layout = Self::create_pipeline(
             device,
@@ -55,9 +55,9 @@ impl Pipeline {
         })
     }
 
-    pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
-        self.shaders[0].reload(ShaderStage::Vertex)?;
-        self.shaders[1].reload(ShaderStage::Fragment)?;
+    pub fn reload_shaders(&mut self, device: &Device) -> Result<(), anyhow::Error> {
+        self.shaders[0].reload(device, ShaderStage::Vertex)?;
+        self.shaders[1].reload(device, ShaderStage::Fragment)?;
         Ok(())
     }
 
@@ -127,21 +127,19 @@ impl Pipeline {
         self.pipeline_and_layout
     }
 
-    pub unsafe fn cleanup(&mut self, device: &Device) {
+    pub unsafe fn cleanup(&mut self, device: &Device, complete: bool) {
         if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
             log::debug!("cleaning Pipeline");
             device.destroy_pipeline(pipeline, None);
             device.destroy_pipeline_layout(layout, None);
         }
-    }
-
-    fn create_shader_module(
-        device: &Device,
-        code: &[u32],
-    ) -> Result<vk::ShaderModule, Box<dyn Error>> {
-        let create_info = vk::ShaderModuleCreateInfo::default().code(code);
-        unsafe {
-            Ok(device.create_shader_module(&create_info, None)?)
+        if complete {
+            if let Some(geometry) = self.geometry.take() {
+                geometry.cleanup(device);
+            }
+            for shader in self.shaders.iter_mut() {
+                shader.cleanup(device);
+            }
         }
     }
 
@@ -154,10 +152,8 @@ impl Pipeline {
         descriptor_set_layout: vk::DescriptorSetLayout,
         shaders: &[Shader; 2],
     ) -> (vk::Pipeline, vk::PipelineLayout) {
-        let vertex_shader_module = Self::create_shader_module(device, shaders[0].data().unwrap())
-            .expect("failed to load vertex shader spv");
-        let fragment_shader_module = Self::create_shader_module(device, shaders[1].data().unwrap())
-            .expect("failed to load fragment shader spv");
+        let vertex_shader_module = shaders[0].module().unwrap();
+        let fragment_shader_module = shaders[1].module().unwrap();
 
         let entry_point_name = CString::new("main").unwrap();
         let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::default()
@@ -271,11 +267,6 @@ impl Pipeline {
         let pipeline = unsafe {
             device.create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
                 .unwrap()[0]
-        };
-
-        unsafe {
-            device.destroy_shader_module(vertex_shader_module, None);
-            device.destroy_shader_module(fragment_shader_module, None);
         };
 
         (pipeline, layout)

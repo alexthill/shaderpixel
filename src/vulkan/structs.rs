@@ -1,91 +1,9 @@
 use crate::math::{Matrix4, Vector2};
 
 use ash::vk;
-use glslang::{
-    self,
-    Compiler, CompilerOptions, ShaderInput, ShaderStage,
-};
 use std::{
-    borrow::Cow,
-    io::Cursor,
     mem::offset_of,
-    path::Path,
 };
-
-pub struct Shaders {
-    pub main_vert: Shader,
-    pub main_frag: Shader,
-    pub cube_vert: Shader,
-    pub cube_frag: Shader,
-    pub shaders_art: Vec<ShaderArt>,
-}
-
-pub struct ShaderArt {
-    pub is_3d: bool,
-    pub vert: Shader,
-    pub frag: Shader,
-    pub model_matrix: Matrix4,
-}
-
-#[derive(Debug, Clone)]
-pub struct Shader {
-    #[allow(unused)]
-    path: Option<Cow<'static, Path>>,
-    data: Option<Box<[u32]>>,
-}
-
-impl Shader {
-    pub fn new<P: Into<Cow<'static, Path>>>(path: P) -> Self {
-        Self {
-            path: Some(path.into()),
-            data: None,
-        }
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
-        let mut cursor = Cursor::new(bytes);
-        let data = ash::util::read_spv(&mut cursor)?;
-        Ok(Self {
-            path: None,
-            data: Some(data.into()),
-        })
-    }
-
-    pub fn data(&self) -> Option<&[u32]> {
-        self.data.as_deref()
-    }
-
-    pub fn reload(&mut self, stage: ShaderStage) -> Result<(), anyhow::Error> {
-        let input_path = self.path
-            .as_ref()
-            .expect("shader must have a path set to load it")
-            .to_str()
-            .unwrap();
-        log::debug!("compiling shader {input_path} of stage {stage:?}");
-
-        let source = std::fs::read_to_string(input_path)?.into();
-        let compiler = Compiler::acquire().unwrap();
-        let input = ShaderInput::new(
-            &source,
-            stage,
-            &CompilerOptions::default(),
-            None,
-            None,
-        )?;
-        let shader = compiler.create_shader(input)?;
-        let data = shader.compile()?;
-        self.data = Some(data.into());
-        Ok(())
-    }
-
-    pub fn ensure(&mut self, stage: ShaderStage) -> Result<(), anyhow::Error> {
-        if self.data.is_none() {
-            self.reload(stage)
-        } else {
-            Ok(())
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]

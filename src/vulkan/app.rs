@@ -7,7 +7,8 @@ use super::{
     geometry::Geometry,
     debug::*,
     pipeline::Pipeline,
-    structs::{PushConstants, Shaders, UniformBufferObject, Vertex},
+    shader::Shaders,
+    structs::{PushConstants, UniformBufferObject, Vertex},
     swapchain::{SwapchainProperties, SwapchainSupportDetails},
     texture::Texture,
 };
@@ -165,9 +166,15 @@ impl VkApp {
             ],
         ).unwrap();
 
+        // ensure that all shaders are valid before we try to create the pipelines
+        let device = vk_context.device();
+        shaders.main_vert.ensure(device, glslang::ShaderStage::Vertex)?;
+        shaders.main_frag.ensure(device, glslang::ShaderStage::Fragment)?;
+        shaders.cube_vert.ensure(device, glslang::ShaderStage::Vertex)?;
+        shaders.cube_frag.ensure(device, glslang::ShaderStage::Fragment)?;
         for shader in shaders.shaders_art.iter_mut() {
-            shader.vert.ensure(glslang::ShaderStage::Vertex)?;
-            shader.frag.ensure(glslang::ShaderStage::Fragment)?;
+            shader.vert.ensure(device, glslang::ShaderStage::Vertex)?;
+            shader.frag.ensure(device, glslang::ShaderStage::Fragment)?;
         }
 
         let geometry_skybox = {
@@ -1680,10 +1687,11 @@ impl VkApp {
     pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
         self.wait_gpu_idle();
 
+        let device = self.vk_context.device();
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
-            pipeline.reload_shaders()?;
+            pipeline.reload_shaders(device)?;
             pipeline.recreate(
-                self.vk_context.device(),
+                device,
                 self.swapchain_properties,
                 self.msaa_samples,
                 self.render_pass,
@@ -1777,7 +1785,7 @@ impl VkApp {
                 device.destroy_framebuffer(*framebuffer, None);
             }
             for pipeline in self.pipelines.iter_mut() {
-                pipeline.cleanup(device);
+                pipeline.cleanup(device, false);
             }
             device.destroy_render_pass(self.render_pass, None);
             for image_view in self.swapchain_image_views.iter() {
@@ -1831,10 +1839,7 @@ impl Drop for VkApp {
         self.in_flight_frames.destroy(device);
         unsafe {
             for pipeline in self.pipelines.iter_mut() {
-                pipeline.cleanup(device);
-                if let Some(geometry) = pipeline.geometry.take() {
-                    geometry.cleanup(device);
-                }
+                pipeline.cleanup(device, true);
             }
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
