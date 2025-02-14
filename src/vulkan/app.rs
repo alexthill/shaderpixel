@@ -7,7 +7,7 @@ use super::{
     geometry::Geometry,
     debug::*,
     pipeline::Pipeline,
-    shader::Shaders,
+    shader::{Shader, Shaders},
     structs::{PushConstants, UniformBufferObject, Vertex},
     swapchain::{SwapchainProperties, SwapchainSupportDetails},
     texture::Texture,
@@ -25,6 +25,8 @@ use std::{
     ffi::CString,
     mem::{align_of, size_of},
     path::Path,
+    sync::mpsc::sync_channel,
+    thread,
 };
 use winit::window::Window;
 
@@ -166,15 +168,17 @@ impl VkApp {
             ],
         ).unwrap();
 
-        // ensure that all shaders are valid before we try to create the pipelines
-        let device = vk_context.device();
-        shaders.main_vert.ensure(device, glslang::ShaderStage::Vertex)?;
-        shaders.main_frag.ensure(device, glslang::ShaderStage::Fragment)?;
-        shaders.cube_vert.ensure(device, glslang::ShaderStage::Vertex)?;
-        shaders.cube_frag.ensure(device, glslang::ShaderStage::Fragment)?;
+        // this is the thread to compile shaders and the channel to send them
+        let (tx, rx) = sync_channel::<Shader>(shaders.shaders_art.len());
+        thread::spawn(move || {
+            while let Ok(shader) = rx.recv() {
+                shader.load_code();
+                thread::sleep(std::time::Duration::from_secs(1));
+            }
+        });
         for shader in shaders.shaders_art.iter_mut() {
-            shader.vert.ensure(device, glslang::ShaderStage::Vertex)?;
-            shader.frag.ensure(device, glslang::ShaderStage::Fragment)?;
+            shader.vert.set_hot_reload(tx.clone());
+            shader.frag.set_hot_reload(tx.clone());
         }
 
         let geometry_skybox = {
@@ -1504,7 +1508,10 @@ impl VkApp {
                 )
             };
 
-            for pipeline in pipelines.iter().filter(|p| p.active) {
+            for pipeline in pipelines.iter() {
+                if !pipeline.active || pipeline.waiting_for_shaders {
+                    continue;
+                }
                 unsafe {
                     // bind pipeline, vertex and index buffer
                     // bind descriptor set
@@ -1564,6 +1571,25 @@ impl VkApp {
     /// True if the swapchain is dirty and needs to be recreated.
     pub fn draw_frame(&mut self, time: f32) -> bool {
         log::trace!("Drawing frame.");
+
+        let mut recreated_a_pipeline = false;
+        for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
+            if pipeline.waiting_for_shaders {
+                pipeline.recreate(
+                    self.vk_context.device(),
+                    self.swapchain_properties,
+                    self.msaa_samples,
+                    self.render_pass,
+                    self.descriptor_set_layout,
+                );
+                recreated_a_pipeline = !pipeline.waiting_for_shaders || recreated_a_pipeline;
+            }
+        }
+        if recreated_a_pipeline {
+            self.wait_gpu_idle();
+            self.recreate_command_buffers();
+        }
+
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
         let render_finished_semaphore = sync_objects.render_finished_semaphore;
@@ -1684,22 +1710,17 @@ impl VkApp {
         self.recreate_command_buffers();
     }
 
-    pub fn reload_shaders(&mut self) -> Result<(), anyhow::Error> {
+    pub fn reload_shaders(&mut self) {
         self.wait_gpu_idle();
 
         let device = self.vk_context.device();
+        let mut reloading = false;
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
-            pipeline.reload_shaders(device)?;
-            pipeline.recreate(
-                device,
-                self.swapchain_properties,
-                self.msaa_samples,
-                self.render_pass,
-                self.descriptor_set_layout,
-            );
+            reloading = pipeline.reload_shaders(device) || reloading;
         }
-        self.recreate_command_buffers();
-        Ok(())
+        if reloading {
+            self.recreate_command_buffers();
+        }
     }
 
     /// Recreates the swapchain with new dimensions.
@@ -1785,7 +1806,7 @@ impl VkApp {
                 device.destroy_framebuffer(*framebuffer, None);
             }
             for pipeline in self.pipelines.iter_mut() {
-                pipeline.cleanup(device, false);
+                pipeline.cleanup_pip(device);
             }
             device.destroy_render_pass(self.render_pass, None);
             for image_view in self.swapchain_image_views.iter() {
@@ -1839,7 +1860,7 @@ impl Drop for VkApp {
         self.in_flight_frames.destroy(device);
         unsafe {
             for pipeline in self.pipelines.iter_mut() {
-                pipeline.cleanup(device, true);
+                pipeline.cleanup(device);
             }
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);

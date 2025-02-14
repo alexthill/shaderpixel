@@ -2,10 +2,11 @@ use shaderpixel::{
     env_generator::default_env,
     fs::Carousel,
     math::{Deg, Matrix4, Vector3, Vector4},
-    vulkan::{Shader, Shaders, ShaderArt, VkApp},
+    vulkan::{Shader, Shaders, ShaderArt, ShaderInner, VkApp},
 };
 
 use anyhow::Context;
+use glslang::ShaderStage;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -14,8 +15,10 @@ use winit::{
     keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
     window::{Fullscreen, Window, WindowId},
 };
-use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -104,45 +107,59 @@ impl App {
         let image_path = self.image_carousel.get_next(0, check_if_image)
             .context("Failed to find an image")?;
         let dims = [WIDTH, HEIGHT];
+
+        let vert_shader_art2d: Shader = ShaderInner::new(ShaderStage::Vertex)
+            .path(PathBuf::from("assets/shaders/art2d.vert")).into();
+        let vert_shader_art3d: Shader = ShaderInner::new(ShaderStage::Vertex)
+            .path(PathBuf::from("assets/shaders/art3d.vert")).into();
         let shaders = Shaders {
-            main_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?,
-            main_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?,
-            cube_vert: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?,
-            cube_frag: Shader::from_bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?,
+            main_vert: ShaderInner::new(ShaderStage::Vertex)
+                .bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?.into(),
+            main_frag: ShaderInner::new(ShaderStage::Fragment)
+                .bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.frag.spv")))?.into(),
+            cube_vert: ShaderInner::new(ShaderStage::Vertex)
+                .bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.vert.spv")))?.into(),
+            cube_frag: ShaderInner::new(ShaderStage::Fragment)
+                .bytes(include_bytes!(concat!(env!("OUT_DIR"), "/cubemap.frag.spv")))?.into(),
             // draw 2D art before 3D so that it can be seen through transparent stuff
             shaders_art: vec![
                 ShaderArt {
                     is_3d: false,
-                    vert: Shader::new::<PathBuf>("assets/shaders/art2d.vert".into()),
-                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbrot.frag".into()),
+                    vert: vert_shader_art2d.clone(),
+                    frag: ShaderInner::new(ShaderStage::Fragment)
+                        .path::<PathBuf>("assets/shaders/mandelbrot.frag".into()).into(),
                     model_matrix: Matrix4::from_translation([5.99, 1.5, -1.5].into())
                         * Matrix4::from_scale(0.5)
                         * Matrix4::from_angle_y(Deg(90.)),
                 },
                 ShaderArt {
                     is_3d: false,
-                    vert: Shader::new::<PathBuf>("assets/shaders/art2d.vert".into()),
-                    frag: Shader::new::<PathBuf>("assets/shaders/cat.frag".into()),
+                    vert: vert_shader_art2d,
+                    frag: ShaderInner::new(ShaderStage::Fragment)
+                        .path::<PathBuf>("assets/shaders/cat.frag".into()).into(),
                     model_matrix: Matrix4::from_translation([5.99, 1.5, -4.5].into())
                         * Matrix4::from_scale(0.5)
                         * Matrix4::from_angle_y(Deg(90.)),
                 },
                 ShaderArt {
                     is_3d: true,
-                    vert: Shader::new::<PathBuf>("assets/shaders/art3d.vert".into()),
-                    frag: Shader::new::<PathBuf>("assets/shaders/mandelbox.frag".into()),
+                    vert: vert_shader_art3d.clone(),
+                    frag: ShaderInner::new(ShaderStage::Fragment)
+                        .path::<PathBuf>("assets/shaders/mandelbox.frag".into()).into(),
                     model_matrix: Matrix4::from_translation([-2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
                 },
                 ShaderArt {
                     is_3d: true,
-                    vert: Shader::new::<PathBuf>("assets/shaders/art3d.vert".into()),
-                    frag: Shader::new::<PathBuf>("assets/shaders/mengersponge.frag".into()),
+                    vert: vert_shader_art3d,
+                    frag: ShaderInner::new(ShaderStage::Fragment)
+                        .path::<PathBuf>("assets/shaders/mengersponge.frag".into()).into(),
                     model_matrix: Matrix4::from_translation([2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
                 },
             ],
         };
+
         let vulkan = VkApp::new(
             &window,
             dims,
@@ -352,10 +369,7 @@ impl ApplicationHandler for App {
             self.load_next_image = false;
         }
         if self.reload_shaders {
-            if let Err(err) = app.reload_shaders() {
-                log::warn!("Error while reloading shaders: {err}");
-                log::warn!("{err:#?}");
-            }
+            app.reload_shaders();
             self.reload_shaders = false;
         }
 

@@ -11,4 +11,4 @@ mod swapchain;
 mod texture;
 
 pub use app::VkApp;
-pub use shader::{Shader, Shaders, ShaderArt};
+pub use shader::{Shader, Shaders, ShaderArt, ShaderInner};
