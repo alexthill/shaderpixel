@@ -25,7 +25,7 @@ use std::{
     ffi::CString,
     mem::{align_of, size_of},
     path::Path,
-    sync::mpsc::sync_channel,
+    sync::mpsc,
     thread,
 };
 use winit::window::Window;
@@ -168,12 +168,19 @@ impl VkApp {
             ],
         ).unwrap();
 
-        // this is the thread to compile shaders and the channel to send them
-        let (tx, rx) = sync_channel::<Shader>(shaders.shaders_art.len());
+        // compile shaders in a different thread
+        // use a sync mpsc channel to send them to the compile thread
+        // give the channel enough capacity to store all shaders for art without blocking
+        let (tx, rx) = mpsc::sync_channel::<Shader>(shaders.shaders_art.len() * 2);
         thread::spawn(move || {
             while let Ok(shader) = rx.recv() {
-                shader.load_code();
-                thread::sleep(std::time::Duration::from_secs(1));
+                if let Err(err) =  shader.compile_code() {
+                    match shader.path() {
+                        Some(path) => log::error!("Error compiling Shader {}:\n{err:#}", path.display()),
+                        None => log::error!("Error compiling Shader:\n{err:#}"),
+                    }
+                }
+                thread::sleep(std::time::Duration::from_millis(20));
             }
         });
         for shader in shaders.shaders_art.iter_mut() {
@@ -214,6 +221,7 @@ impl VkApp {
                 &indices,
             );
             Pipeline::new(
+                "main".to_owned(),
                 vk_context.device(),
                 properties,
                 vk::CullModeFlags::BACK,
@@ -226,6 +234,7 @@ impl VkApp {
             )?
         };
         let pipeline_cube = Pipeline::new(
+            "skybox".to_owned(),
             vk_context.device(),
             properties,
             vk::CullModeFlags::BACK,
@@ -239,6 +248,7 @@ impl VkApp {
         let mut pipelines = vec![pipeline_main, pipeline_cube];
         for shader in shaders.shaders_art {
             let pipeline = Pipeline::new(
+                shader.name,
                 vk_context.device(),
                 properties,
                 vk::CullModeFlags::BACK,
@@ -1582,7 +1592,7 @@ impl VkApp {
                     self.render_pass,
                     self.descriptor_set_layout,
                 );
-                recreated_a_pipeline = !pipeline.waiting_for_shaders || recreated_a_pipeline;
+                recreated_a_pipeline |= !pipeline.waiting_for_shaders;
             }
         }
         if recreated_a_pipeline {
@@ -1609,7 +1619,7 @@ impl VkApp {
             )
         };
         let image_index = match result {
-            // ignore suboptimal swap chain here because we already aquired an image
+            // ignore suboptimal swap chain here because we already acquired an image
             Ok((image_index, _suboptimal)) => image_index,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 return true;
@@ -1716,7 +1726,7 @@ impl VkApp {
         let device = self.vk_context.device();
         let mut reloading = false;
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
-            reloading = pipeline.reload_shaders(device) || reloading;
+            reloading |= pipeline.reload_shaders(device);
         }
         if reloading {
             self.recreate_command_buffers();

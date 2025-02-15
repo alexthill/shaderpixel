@@ -49,10 +49,7 @@ impl Geometry {
     }
 
     pub fn get(&self) -> Option<(vk::Buffer, vk::Buffer, u32)> {
-        match self.rc {
-            Some(_) => Some((self.vertex_buffer, self.index_buffer, self.index_count)),
-            None => None,
-        }
+        self.rc.as_ref().map(|_| (self.vertex_buffer, self.index_buffer, self.index_count))
     }
 
     pub unsafe fn cleanup(mut self, device: &Device) {

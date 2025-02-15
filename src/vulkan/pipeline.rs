@@ -6,11 +6,10 @@ use super::{
 };
 
 use ash::{vk, Device};
-use std::{
-    ffi::CString,
-};
+use std::ffi::CString;
 
 pub struct Pipeline {
+    name: String,
     pipeline_and_layout: Option<(vk::Pipeline, vk::PipelineLayout)>,
     pub geometry: Option<Geometry>,
     pub active: bool,
@@ -21,7 +20,9 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        name: String,
         device: &Device,
         swapchain_properties: SwapchainProperties,
         cull_mode: vk::CullModeFlags,
@@ -33,6 +34,7 @@ impl Pipeline {
         push_constants: Option<PushConstants>,
     ) -> Result<Self, anyhow::Error> {
         let mut pipeline = Self {
+            name,
             geometry: Some(geometry),
             pipeline_and_layout: None,
             active: true,
@@ -46,7 +48,7 @@ impl Pipeline {
     }
 
     pub fn reload_shaders(&mut self, device: &Device) -> bool {
-        if self.shaders[0].reload(device) || self.shaders[1].reload(device) {
+        if self.shaders[0].reload(device) | self.shaders[1].reload(device) {
             self.waiting_for_shaders = true;
             unsafe {
                 self.cleanup_pip(device);
@@ -85,6 +87,7 @@ impl Pipeline {
                 [vsm, fsm],
             ));
         } else {
+            self.waiting_for_shaders = true;
         }
     }
 
@@ -130,7 +133,7 @@ impl Pipeline {
 
     pub unsafe fn cleanup_pip(&mut self, device: &Device) {
         if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
-            log::debug!("cleaning Pipeline");
+            log::debug!("cleaning Pipeline {}", self.name);
             device.destroy_pipeline(pipeline, None);
             device.destroy_pipeline_layout(layout, None);
         }

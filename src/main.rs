@@ -16,7 +16,7 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     time::Instant,
 };
 
@@ -109,9 +109,9 @@ impl App {
         let dims = [WIDTH, HEIGHT];
 
         let vert_shader_art2d: Shader = ShaderInner::new(ShaderStage::Vertex)
-            .path(PathBuf::from("assets/shaders/art2d.vert")).into();
+            .path("assets/shaders/art2d.vert").into();
         let vert_shader_art3d: Shader = ShaderInner::new(ShaderStage::Vertex)
-            .path(PathBuf::from("assets/shaders/art3d.vert")).into();
+            .path("assets/shaders/art3d.vert").into();
         let shaders = Shaders {
             main_vert: ShaderInner::new(ShaderStage::Vertex)
                 .bytes(include_bytes!(concat!(env!("OUT_DIR"), "/shader.vert.spv")))?.into(),
@@ -124,36 +124,40 @@ impl App {
             // draw 2D art before 3D so that it can be seen through transparent stuff
             shaders_art: vec![
                 ShaderArt {
+                    name: "Mandelbrot".to_owned(),
                     is_3d: false,
                     vert: vert_shader_art2d.clone(),
                     frag: ShaderInner::new(ShaderStage::Fragment)
-                        .path::<PathBuf>("assets/shaders/mandelbrot.frag".into()).into(),
+                        .path("assets/shaders/mandelbrot.frag").into(),
                     model_matrix: Matrix4::from_translation([5.99, 1.5, -1.5].into())
                         * Matrix4::from_scale(0.5)
                         * Matrix4::from_angle_y(Deg(90.)),
                 },
                 ShaderArt {
+                    name: "Sdf Cat".to_owned(),
                     is_3d: false,
                     vert: vert_shader_art2d,
                     frag: ShaderInner::new(ShaderStage::Fragment)
-                        .path::<PathBuf>("assets/shaders/cat.frag".into()).into(),
+                        .path("assets/shaders/cat.frag").into(),
                     model_matrix: Matrix4::from_translation([5.99, 1.5, -4.5].into())
                         * Matrix4::from_scale(0.5)
                         * Matrix4::from_angle_y(Deg(90.)),
                 },
                 ShaderArt {
+                    name: "Mandelbox".to_owned(),
                     is_3d: true,
                     vert: vert_shader_art3d.clone(),
                     frag: ShaderInner::new(ShaderStage::Fragment)
-                        .path::<PathBuf>("assets/shaders/mandelbox.frag".into()).into(),
+                        .path("assets/shaders/mandelbox.frag").into(),
                     model_matrix: Matrix4::from_translation([-2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
                 },
                 ShaderArt {
+                    name: "Menger Sponge".to_owned(),
                     is_3d: true,
                     vert: vert_shader_art3d,
                     frag: ShaderInner::new(ShaderStage::Fragment)
-                        .path::<PathBuf>("assets/shaders/mengersponge.frag".into()).into(),
+                        .path("assets/shaders/mengersponge.frag").into(),
                     model_matrix: Matrix4::from_translation([2.5, 1.51, -0.5].into())
                         * Matrix4::from_scale(0.5),
                 },
