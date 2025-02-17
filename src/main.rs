@@ -155,10 +155,19 @@ impl App {
                 ShaderArt {
                     name: "Menger Sponge".to_owned(),
                     is_3d: true,
-                    vert: vert_shader_art3d,
+                    vert: vert_shader_art3d.clone(),
                     frag: ShaderInner::new(ShaderStage::Fragment)
                         .path("assets/shaders/mengersponge.frag").into(),
                     model_matrix: Matrix4::from_translation([2.5, 1.51, -0.5].into())
+                        * Matrix4::from_scale(0.5),
+                },
+                ShaderArt {
+                    name: "Solar".to_owned(),
+                    is_3d: true,
+                    vert: vert_shader_art3d,
+                    frag: ShaderInner::new(ShaderStage::Fragment)
+                        .path("assets/shaders/solar.frag").into(),
+                    model_matrix: Matrix4::from_translation([-2.5, 1.51, -5.5].into())
                         * Matrix4::from_scale(0.5),
                 },
             ],

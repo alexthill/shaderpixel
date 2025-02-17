@@ -20,6 +20,7 @@ layout(location = 0) out vec3 fragPos;
 layout(location = 1) flat out vec3 cameraPos;
 layout(location = 2) flat out float cameraDistToContainer;
 layout(location = 3) flat out vec2 iResolution;
+layout(location = 4) flat out float iTime;
 
 void main() {
     fragPos = vPosition;
@@ -30,6 +31,7 @@ void main() {
     // assuming container is the unit cube
     cameraDistToContainer = length(max(vec3(0.0), abs(cameraPos) - 1.0));
     iResolution = ubo.resolution;
+    iTime = ubo.time;
 
     gl_Position = ubo.proj * ubo.view * pcs.model * vec4(vPosition, 1.0);
 }
