@@ -5,12 +5,18 @@ use glslang::{
     self,
     Compiler, CompilerOptions, ShaderInput, ShaderStage,
 };
+use notify_debouncer_full::{new_debouncer, notify};
 use std::{
+    collections::{HashMap, HashSet},
     io::Cursor,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    sync::mpsc::SyncSender,
+    sync::mpsc::{self, Sender},
+    time::Duration,
+    thread,
 };
+
+const DEBOUNCE_TIME: Duration = Duration::from_millis(500);
 
 pub struct Shaders {
     pub main_vert: Shader,
@@ -18,6 +24,65 @@ pub struct Shaders {
     pub cube_vert: Shader,
     pub cube_frag: Shader,
     pub shaders_art: Vec<ShaderArt>,
+}
+
+impl Shaders {
+    pub fn watch_art(&self) {
+        let shaders_by_path = self.shaders_art.iter()
+            .flat_map(|shader| [shader.vert.clone(), shader.frag.clone()])
+            .filter_map(|shader| shader.path()
+                        .and_then(|path| std::fs::canonicalize(&path).ok())
+                        .map(|path| (path, shader)))
+            .collect::<HashMap<_, _>>();
+
+        thread::spawn(move || {
+            let (tx, rx) = mpsc::channel();
+            let mut debouncer = match new_debouncer(DEBOUNCE_TIME, None, tx) {
+                Ok(debouncer) => debouncer,
+                Err(err) => {
+                    log::error!("failed to create file watcher: {err}");
+                    return;
+                }
+            };
+            let dirs_to_watch = shaders_by_path.keys()
+                .filter_map(|path| path.parent())
+                .collect::<HashSet<_>>();
+            for path in dirs_to_watch {
+                if let Err(err) = debouncer.watch(path, notify::RecursiveMode::Recursive) {
+                    log::error!("failed to watch {}: {err}", path.display());
+                } else {
+                    log::debug!("watching file {}", path.display());
+                }
+            }
+            for res in rx {
+                match res {
+                    Ok(events) => {
+                        for event in events {
+                            use notify::EventKind::*;
+                            use notify::event::{AccessKind::*, AccessMode::*, ModifyKind::*};
+
+                            //log::info!("event: {:?}", event);
+                            if let Access(Close(Write)) | Modify(Data(_)) = event.kind {
+                                for path in &event.paths {
+                                    if let Some(shader) = shaders_by_path.get(path) {
+                                        if let Some(path) = shader.path() {
+                                            log::info!("shader changed {}", path.display());
+                                            let Ok(mut inner) = shader.inner.write() else {
+                                                log::error!("Lock poisoned");
+                                                continue;
+                                            };
+                                            inner.code_has_changed = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => log::info!("watch error: {:?}", e),
+                }
+            }
+        });
+    }
 }
 
 pub struct ShaderArt {
@@ -37,7 +102,7 @@ impl Shader {
         self.inner.read().ok()?.path.clone()
     }
 
-    pub fn set_hot_reload(&mut self, sender: SyncSender<Shader>) {
+    pub fn set_hot_reload(&mut self, sender: Sender<Shader>) {
         let mut inner = self.inner.write().unwrap();
         if inner.compile_sender.is_some() {
             return;
@@ -48,19 +113,29 @@ impl Shader {
         sender.send(self.clone()).unwrap();
     }
 
-    pub fn reload(&self, device: &Device) -> bool {
+    pub fn code_has_changed(&self) -> bool {
+        self.inner.read().map(|inner| inner.code_has_changed).unwrap_or(false)
+    }
+
+    pub fn reload(&self, device: &Device, forced: bool) -> bool {
         let path = self.inner.read().unwrap()
             .path.as_ref().expect("shader must have a path set to load it").clone();
         let mut inner = self.inner.write().unwrap();
         if inner.is_compiling {
+            return true;
+        }
+        if !inner.code_has_changed && !forced {
             return false;
         }
+
+        // reset code_has_changed here so we dont try to recompile infinitly if an error happens
+        inner.code_has_changed = false;
 
         let Some(sender) = inner.compile_sender.clone() else {
             log::error!("tried to queue Shader without sender {}", path.display());
             return false;
         };
-        match sender.try_send(self.clone()) {
+        match sender.send(self.clone()) {
             Ok(_) => {
                 inner.is_compiling = true;
                 inner.cleanup(device);
@@ -138,8 +213,9 @@ pub struct ShaderInner {
     path: Option<PathBuf>,
     code: Option<Box<[u32]>>,
     module: Option<vk::ShaderModule>,
-    compile_sender: Option<SyncSender<Shader>>,
+    compile_sender: Option<Sender<Shader>>,
     is_compiling: bool,
+    code_has_changed: bool,
 }
 
 impl ShaderInner {
@@ -151,6 +227,7 @@ impl ShaderInner {
             module: None,
             compile_sender: None,
             is_compiling: false,
+            code_has_changed: false,
         }
     }
 

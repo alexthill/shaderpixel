@@ -47,8 +47,12 @@ impl Pipeline {
         Ok(pipeline)
     }
 
-    pub fn reload_shaders(&mut self, device: &Device) -> bool {
-        if self.shaders[0].reload(device) | self.shaders[1].reload(device) {
+    pub fn has_changed(&self) -> bool {
+        self.shaders.iter().any(|shader| shader.code_has_changed())
+    }
+
+    pub fn reload_shaders(&mut self, device: &Device, forced: bool) -> bool {
+        if self.shaders[0].reload(device, forced) | self.shaders[1].reload(device, forced) {
             self.waiting_for_shaders = true;
             unsafe {
                 self.cleanup_pip(device);

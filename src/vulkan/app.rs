@@ -169,24 +169,26 @@ impl VkApp {
         ).unwrap();
 
         // compile shaders in a different thread
-        // use a sync mpsc channel to send them to the compile thread
+        // use a sync mpsc channel to send them to the compilation thread
         // give the channel enough capacity to store all shaders for art without blocking
-        let (tx, rx) = mpsc::sync_channel::<Shader>(shaders.shaders_art.len() * 2);
+        let (tx, rx) = mpsc::channel::<Shader>();
         thread::spawn(move || {
             while let Ok(shader) = rx.recv() {
-                if let Err(err) =  shader.compile_code() {
+                if let Err(err) = shader.compile_code() {
                     match shader.path() {
                         Some(path) => log::error!("Error compiling Shader {}:\n{err:#}", path.display()),
                         None => log::error!("Error compiling Shader:\n{err:#}"),
                     }
                 }
-                thread::sleep(std::time::Duration::from_millis(20));
             }
         });
         for shader in shaders.shaders_art.iter_mut() {
             shader.vert.set_hot_reload(tx.clone());
             shader.frag.set_hot_reload(tx.clone());
         }
+
+        // watch shader files for changes
+        shaders.watch_art();
 
         let geometry_skybox = {
             let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
@@ -1582,21 +1584,27 @@ impl VkApp {
     pub fn draw_frame(&mut self, time: f32) -> bool {
         log::trace!("Drawing frame.");
 
-        let mut recreated_a_pipeline = false;
+        let device = self.vk_context.device();
+        let mut recreate_command_buffers = false;
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
-            if pipeline.waiting_for_shaders {
+            if pipeline.has_changed() {
+                recreate_command_buffers = true;
+            } else if pipeline.waiting_for_shaders {
                 pipeline.recreate(
-                    self.vk_context.device(),
+                    device,
                     self.swapchain_properties,
                     self.msaa_samples,
                     self.render_pass,
                     self.descriptor_set_layout,
                 );
-                recreated_a_pipeline |= !pipeline.waiting_for_shaders;
+                recreate_command_buffers |= !pipeline.waiting_for_shaders;
             }
         }
-        if recreated_a_pipeline {
+        if recreate_command_buffers {
             self.wait_gpu_idle();
+            for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
+                pipeline.reload_shaders(device, false);
+            }
             self.recreate_command_buffers();
         }
 
@@ -1726,7 +1734,7 @@ impl VkApp {
         let device = self.vk_context.device();
         let mut reloading = false;
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
-            reloading |= pipeline.reload_shaders(device);
+            reloading |= pipeline.reload_shaders(device, true);
         }
         if reloading {
             self.recreate_command_buffers();

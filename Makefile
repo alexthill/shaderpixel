@@ -10,6 +10,9 @@ c: check
 check:
 	@docker exec --tty --workdir /src/$(NAME) $(CONTAINER) $(CARGO) check
 
+clippy:
+	@docker exec --tty --workdir /src/$(NAME) $(CONTAINER) $(CARGO) clippy
+
 b: build
 build:
 	@docker exec --tty --workdir /src/$(NAME) $(CONTAINER) $(CARGO) build
