@@ -73,6 +73,15 @@ impl<T: Default + Copy + From<bool>, const M: usize> Matrix<T, M> {
         out[M - 1][M - 1] = true.into();
         out
     }
+
+    /// Creates a diagonal matrix from a diagonal.
+    pub fn from_diag(diag: Vector<T, M>) -> Self {
+        let mut out = Self::default();
+        for i in 0..M {
+            out[i][i] = diag[i];
+        }
+        out
+    }
 }
 
 impl Matrix<f32, 4> {
