@@ -1,6 +1,6 @@
 use super::buffer;
 use super::context::VkContext;
-use super::structs::Vertex;
+use super::vertex::Vertex;
 
 use ash::{vk, Device};
 use std::rc::Rc;
@@ -8,6 +8,8 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct Geometry {
     rc: Option<Rc<()>>,
+    pub vertex_binding_description: vk::VertexInputBindingDescription,
+    pub vertex_attribute_descriptions: Vec<vk::VertexInputAttributeDescription>,
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
     index_buffer: vk::Buffer,
@@ -16,11 +18,11 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn new(
+    pub fn new<V: Vertex + Copy>(
         vk_context: &VkContext,
         transient_command_pool: vk::CommandPool,
         graphics_queue: vk::Queue,
-        vertices: &[Vertex],
+        vertices: &[V],
         indices: &[u32],
     ) -> Self {
         let (vertex_buffer, vertex_buffer_memory) = Self::create_buffer_with_data::<u32, _>(
@@ -40,6 +42,8 @@ impl Geometry {
 
         Self {
             rc: Some(Rc::new(())),
+            vertex_binding_description: V::get_binding_description(),
+            vertex_attribute_descriptions: V::get_attribute_descriptions(),
             vertex_buffer,
             vertex_buffer_memory,
             index_buffer,

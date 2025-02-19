@@ -1,7 +1,7 @@
 use super::{
     geometry::Geometry,
     shader::Shader,
-    structs::{PushConstants, Vertex},
+    structs::PushConstants,
     swapchain::SwapchainProperties,
 };
 
@@ -11,6 +11,7 @@ use std::ffi::CString;
 pub struct Pipeline {
     name: String,
     pipeline_and_layout: Option<(vk::Pipeline, vk::PipelineLayout)>,
+    descriptor_sets: Vec<vk::DescriptorSet>,
     pub geometry: Option<Geometry>,
     pub active: bool,
     pub waiting_for_shaders: bool,
@@ -29,6 +30,7 @@ impl Pipeline {
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
+        descriptor_sets: Vec<vk::DescriptorSet>,
         geometry: Geometry,
         shaders: [Shader; 2],
         push_constants: Option<PushConstants>,
@@ -39,6 +41,7 @@ impl Pipeline {
             pipeline_and_layout: None,
             active: true,
             waiting_for_shaders: true,
+            descriptor_sets,
             cull_mode,
             shaders,
             push_constants,
@@ -89,6 +92,7 @@ impl Pipeline {
                 render_pass,
                 descriptor_set_layout,
                 [vsm, fsm],
+                self.geometry.as_ref().unwrap(),
             ));
         } else {
             self.waiting_for_shaders = true;
@@ -99,7 +103,7 @@ impl Pipeline {
         &self,
         device: &Device,
         buffer: vk::CommandBuffer,
-        descriptor_sets: &[vk::DescriptorSet],
+        i: usize,
     ) {
         let (pip_pip, pip_layout) = self.get().expect("pipeline must be initalized");
         device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, pip_pip);
@@ -125,7 +129,7 @@ impl Pipeline {
             vk::PipelineBindPoint::GRAPHICS,
             pip_layout,
             0,
-            descriptor_sets,
+            &self.descriptor_sets[i..=i],
             &[],
         );
         device.cmd_draw_indexed(buffer, index_count, 1, 0, 0, 0);
@@ -161,6 +165,7 @@ impl Pipeline {
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
         shader_modules: [vk::ShaderModule; 2],
+        geometry: &Geometry,
     ) -> (vk::Pipeline, vk::PipelineLayout) {
         let entry_point_name = CString::new("main").unwrap();
         let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::default()
@@ -173,8 +178,8 @@ impl Pipeline {
             .name(&entry_point_name);
         let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
 
-        let vertex_binding_descs = [Vertex::get_binding_description()];
-        let vertex_attribute_descs = Vertex::get_attribute_descriptions();
+        let vertex_binding_descs = [geometry.vertex_binding_description];
+        let vertex_attribute_descs = &geometry.vertex_attribute_descriptions;
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&vertex_binding_descs)
             .vertex_attribute_descriptions(&vertex_attribute_descs);

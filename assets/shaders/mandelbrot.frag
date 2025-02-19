@@ -4,6 +4,7 @@
 #define LN2 0.6931471805599453
 
 layout(location = 0) in vec3 fragPos;
+layout(location = 1) in float iTime;
 
 layout(location = 0) out vec4 outColor;
 

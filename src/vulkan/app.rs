@@ -8,9 +8,10 @@ use super::{
     debug::*,
     pipeline::Pipeline,
     shader::{Shader, Shaders},
-    structs::{PushConstants, UniformBufferObject, Vertex},
+    structs::{PushConstants, UniformBufferObject},
     swapchain::{SwapchainProperties, SwapchainSupportDetails},
     texture::Texture,
+    vertex::{Vertex, VertexColorCoords, VertexSimple},
 };
 
 use anyhow::Context;
@@ -32,7 +33,7 @@ use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
-const PIPELINE_IDX_MAIN: usize = 0;
+const _PIPELINE_IDX_MAIN: usize = 0;
 const PIPELINE_IDX_CUBE: usize = 1;
 const PIPELINE_IDX_ART: usize = 2;
 
@@ -61,11 +62,11 @@ pub struct VkApp {
     color_texture: Texture,
     depth_format: vk::Format,
     depth_texture: Texture,
-    textures: [Texture; 2],
+    textures: Vec<Texture>,
     uniform_buffers: Vec<vk::Buffer>,
     uniform_buffer_memories: Vec<vk::DeviceMemory>,
     descriptor_pool: vk::DescriptorPool,
-    descriptor_sets: Vec<vk::DescriptorSet>,
+    descriptor_sets_main: Vec<vk::DescriptorSet>,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
 }
@@ -154,6 +155,12 @@ impl VkApp {
             graphics_queue,
             image_path,
         ).unwrap();
+        let texture_art = Self::create_texture_image(
+            &vk_context,
+            command_pool,
+            graphics_queue,
+            "assets/downloads/earth.jpg",
+        ).unwrap();
         let texture_cubemap = Self::create_cubemap(
             &vk_context,
             command_pool,
@@ -167,6 +174,33 @@ impl VkApp {
                 "assets/cubemap/front.png",
             ],
         ).unwrap();
+
+        let (uniform_buffers, uniform_buffer_memories) =
+            Self::create_uniform_buffers(&vk_context, images.len());
+
+        let descriptor_pool = Self::create_descriptor_pool(vk_context.device(), images.len() as _);
+        let descriptor_sets_main = Self::create_descriptor_sets(
+            vk_context.device(),
+            descriptor_pool,
+            descriptor_set_layout,
+            &uniform_buffers,
+            texture,
+        );
+        let descriptor_sets_cubemap = Self::create_descriptor_sets(
+            vk_context.device(),
+            descriptor_pool,
+            descriptor_set_layout,
+            &uniform_buffers,
+            texture_cubemap,
+        );
+        let descriptor_sets_art = Self::create_descriptor_sets(
+            vk_context.device(),
+            descriptor_pool,
+            descriptor_set_layout,
+            &uniform_buffers,
+            texture_art,
+        );
+
 
         // compile shaders in a different thread
         // use a sync mpsc channel to send them to the compilation thread
@@ -192,7 +226,7 @@ impl VkApp {
 
         let geometry_skybox = {
             let nobj = NormalizedObj::from_reader(fs::load("assets/cubemap/skybox.obj")?)?;
-            let (vertices, indices, _) = Self::load_model(nobj);
+            let (vertices, indices, _) = Self::load_model::<VertexSimple>(nobj);
             Geometry::new(
                 &vk_context,
                 transient_command_pool,
@@ -203,7 +237,7 @@ impl VkApp {
         };
         let geometry_quad = {
             let nobj = NormalizedObj::from_reader(fs::load("assets/models/quad.obj")?)?;
-            let (vertices, indices, _) = Self::load_model(nobj);
+            let (vertices, indices, _) = Self::load_model::<VertexSimple>(nobj);
             Geometry::new(
                 &vk_context,
                 transient_command_pool,
@@ -214,7 +248,7 @@ impl VkApp {
         };
 
         let pipeline_main = {
-            let (vertices, indices, _) = Self::load_model(nobj);
+            let (vertices, indices, _) = Self::load_model::<VertexColorCoords>(nobj);
             let geometry = Geometry::new(
                 &vk_context,
                 transient_command_pool,
@@ -230,6 +264,7 @@ impl VkApp {
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
+                descriptor_sets_main.clone(),
                 geometry,
                 [shaders.main_vert, shaders.main_frag],
                 None,
@@ -243,6 +278,7 @@ impl VkApp {
             msaa_samples,
             render_pass,
             descriptor_set_layout,
+            descriptor_sets_cubemap,
             geometry_skybox.clone(),
             [shaders.cube_vert, shaders.cube_frag],
             None,
@@ -257,6 +293,7 @@ impl VkApp {
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
+                descriptor_sets_art.clone(),
                 if shader.is_3d { geometry_skybox.clone() } else { geometry_quad.clone() },
                 [shader.vert, shader.frag],
                 Some(PushConstants {
@@ -270,25 +307,12 @@ impl VkApp {
         unsafe { geometry_skybox.cleanup(vk_context.device()); }
         unsafe { geometry_quad.cleanup(vk_context.device()); }
 
-        let (uniform_buffers, uniform_buffer_memories) =
-            Self::create_uniform_buffers(&vk_context, images.len());
-
-        let descriptor_pool = Self::create_descriptor_pool(vk_context.device(), images.len() as _);
-        let descriptor_sets = Self::create_descriptor_sets(
-            vk_context.device(),
-            descriptor_pool,
-            descriptor_set_layout,
-            &uniform_buffers,
-            &[texture, texture_cubemap],
-        );
-
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device(),
             command_pool,
             &swapchain_framebuffers,
             render_pass,
             properties,
-            &descriptor_sets,
             &pipelines,
         );
 
@@ -317,11 +341,11 @@ impl VkApp {
             color_texture,
             depth_format,
             depth_texture,
-            textures: [texture, texture_cubemap],
+            textures: vec![texture, texture_cubemap, texture_art],
             uniform_buffers,
             uniform_buffer_memories,
             descriptor_pool,
-            descriptor_sets,
+            descriptor_sets_main,
             command_buffers,
             in_flight_frames,
         })
@@ -565,21 +589,16 @@ impl VkApp {
             .descriptor_count(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT);
-        let cubemap_binding = vk::DescriptorSetLayoutBinding::default()
-            .binding(2)
-            .descriptor_count(1)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT);
-        let bindings = [ubo_binding, sampler_binding, cubemap_binding];
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let bindings = [ubo_binding, sampler_binding];
 
-        unsafe {
-            device.create_descriptor_set_layout(&layout_info, None).unwrap()
-        }
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        unsafe { device.create_descriptor_set_layout(&layout_info, None).unwrap() }
     }
 
     /// Create a descriptor pool to allocate the descriptor sets.
     fn create_descriptor_pool(device: &Device, size: u32) -> vk::DescriptorPool {
+        // double size because we will create different descriptor sets for different pipelines
+        let size = size * 3;
         let pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
@@ -603,7 +622,7 @@ impl VkApp {
         pool: vk::DescriptorPool,
         layout: vk::DescriptorSetLayout,
         uniform_buffers: &[vk::Buffer],
-        textures: &[Texture],
+        texture: Texture,
     ) -> Vec<vk::DescriptorSet> {
         let layouts = (0..uniform_buffers.len())
             .map(|_| layout)
@@ -626,11 +645,10 @@ impl VkApp {
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&buffer_infos);
 
-            let model_texture = textures[0];
             let image_info = vk::DescriptorImageInfo::default()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(model_texture.view)
-                .sampler(model_texture.sampler.unwrap());
+                .image_view(texture.view)
+                .sampler(texture.sampler.unwrap());
             let image_infos = [image_info];
             let sampler_descriptor_write = vk::WriteDescriptorSet::default()
                 .dst_set(*set)
@@ -639,20 +657,7 @@ impl VkApp {
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(&image_infos);
 
-            let cubemap_texture = textures[1];
-            let image_info = vk::DescriptorImageInfo::default()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(cubemap_texture.view)
-                .sampler(cubemap_texture.sampler.unwrap());
-            let image_infos2 = [image_info];
-            let sampler2_descriptor_write = vk::WriteDescriptorSet::default()
-                .dst_set(*set)
-                .dst_binding(2)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&image_infos2);
-
-            let writes = [ubo_descriptor_write, sampler_descriptor_write, sampler2_descriptor_write];
+            let writes = [ubo_descriptor_write, sampler_descriptor_write];
             unsafe { device.update_descriptor_sets(&writes, &[]) }
         }
 
@@ -1394,7 +1399,7 @@ impl VkApp {
         );
     }
 
-    fn load_model(nobj: NormalizedObj) -> (Vec<Vertex>, Vec<u32>, (Vector3, Vector3)) {
+    fn load_model<V: Vertex>(nobj: NormalizedObj) -> (Vec<V>, Vec<u32>, (Vector3, Vector3)) {
         let mut min = Vector3::new(f32::MAX);
         let mut max = Vector3::new(f32::MIN);
         for vertex in &nobj.vertices {
@@ -1403,25 +1408,13 @@ impl VkApp {
                 max[i] = max[i].max(coord);
             }
         }
-        let x_middle = (max.x() + min.x()) / 2.;
         let vertices = nobj.vertices.iter().map(|vertex| {
             let tex_coords = if nobj.has_tex_coords {
                 vertex.tex_coords
             } else {
-                let mut coords = [
-                    vertex.pos_coords[2],
-                    vertex.pos_coords[1],
-                ];
-                if vertex.pos_coords[0] > x_middle {
-                    coords[0] += max.z() - min.z();
-                }
-                coords
+                [vertex.pos_coords[2], vertex.pos_coords[1]]
             };
-            Vertex {
-                pos: vertex.pos_coords,
-                color: [1.0, 1.0, 1.0],
-                coords: tex_coords,
-            }
+            V::new(vertex.pos_coords, [1.0, 1.0, 1.0], tex_coords)
         }).collect();
 
         (vertices, nobj.indices, (min, max))
@@ -1461,7 +1454,6 @@ impl VkApp {
             &self.swapchain_framebuffers,
             self.render_pass,
             self.swapchain_properties,
-            &self.descriptor_sets,
             &self.pipelines,
         );
     }
@@ -1473,7 +1465,6 @@ impl VkApp {
         framebuffers: &[vk::Framebuffer],
         render_pass: vk::RenderPass,
         swapchain_properties: SwapchainProperties,
-        descriptor_sets: &[vk::DescriptorSet],
         pipelines: &[Pipeline],
     ) -> Vec<vk::CommandBuffer> {
         let allocate_info = vk::CommandBufferAllocateInfo::default()
@@ -1528,7 +1519,7 @@ impl VkApp {
                     // bind pipeline, vertex and index buffer
                     // bind descriptor set
                     // draw
-                    pipeline.bind_to_cmd_buffer(device, buffer, &descriptor_sets[i..=i]);
+                    pipeline.bind_to_cmd_buffer(device, buffer, i);
                 }
             }
 
@@ -1689,7 +1680,7 @@ impl VkApp {
         )?;
         let device = self.vk_context.device();
 
-        for set in self.descriptor_sets.iter() {
+        for set in self.descriptor_sets_main.iter() {
             let image_info = vk::DescriptorImageInfo::default()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .image_view(texture.view)
@@ -1707,25 +1698,6 @@ impl VkApp {
         self.textures[0] = texture;
         self.recreate_command_buffers();
         Ok(())
-    }
-
-    pub fn load_new_model(&mut self, nobj: NormalizedObj) {
-        let (vertices, indices, _) = Self::load_model(nobj);
-
-        self.wait_gpu_idle();
-
-        if let Some(geometry) = self.pipelines[PIPELINE_IDX_MAIN].geometry.take() {
-            unsafe { geometry.cleanup(self.vk_context.device()) };
-        }
-        self.pipelines[PIPELINE_IDX_MAIN].geometry = Some(Geometry::new(
-            &self.vk_context,
-            self.transient_command_pool,
-            self.graphics_queue,
-            &vertices,
-            &indices,
-        ));
-
-        self.recreate_command_buffers();
     }
 
     pub fn reload_shaders(&mut self) {
@@ -1888,7 +1860,7 @@ impl Drop for VkApp {
             for &buffer in &self.uniform_buffers {
                 device.destroy_buffer(buffer, None);
             }
-            for mut texture in self.textures {
+            for texture in &mut self.textures {
                 texture.destroy(device);
             }
             device.free_command_buffers(self.command_pool, &self.command_buffers);

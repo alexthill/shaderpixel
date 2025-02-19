@@ -1,13 +1,15 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-#define EPS 0.00001
+#define PI 3.1415926535
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 cameraPos;
 layout(location = 2) in float cameraDistToContainer;
 layout(location = 3) in vec2 iResolution;
 layout(location = 4) in float iTime;
+
+layout(binding = 1) uniform sampler2D texSampler;
 
 layout(location = 0) out vec4 outColor;
 
@@ -24,19 +26,20 @@ vec3 get_moon_pos(vec3 earth_pos) {
     return earth_pos + vec3(cos(iTime * 0.5), 0.0, sin(iTime * 0.5)) * 0.2;
 }
 
-float hash1(float n) {
-    return fract(sin(n) * 43758.5453);
-}
-vec2 hash2(vec2 p) {
-    p = vec2(dot(p,vec2(127.1, 311.7)), dot(p,vec2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453);
+mat2 rot_mat(float angle) {
+    return mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
 }
 
 // blends color ca over cb if da < db, assumes pre multiplied alpha
 void blend_colors(float da, vec4 ca, inout float db, inout vec4 cb) {
-    if (da < db && ca.a > 0.0) {
+    if (ca.a <= 0.0) {
+        return;
+    }
+    if (da < db) {
         db = da;
         cb = ca + cb * (1 - ca.a);
+    } else {
+        cb = cb + ca * (1 - cb.a);
     }
 }
 
@@ -99,10 +102,25 @@ void earth(vec3 camera, vec3 dir, inout float d, inout vec4 color) {
     float angle = dot(dir, normalize(pos - p));
     float brightness = smoothstep(-0.20, 0.2, dot(normalize(p - pos), normalize(-pos)));
 
-    // moon shadow is a bit small, use bigger radius to make it bigger
+    // moon shadow is a bit small, use bigger radius to make it look bigger
     brightness *= in_shadow(vec3(0.0), SUN_RADIUS, get_moon_pos(pos), MOON_RADIUS * 1.5, p);
 
-    vec3 col = brightness * vec3(vec2(angle * 0.25), 1.0);
+    vec3 sp = p - pos;
+    sp.xy = rot_mat(23.43602 / 180.0 * PI) * sp.xy;
+    sp.xz = rot_mat(iTime) * sp.xz;
+    float longitude = atan(sp.z, sp.x) / PI;
+    float latitude = sp.y / EARTH_RADIUS;
+    vec2 uv = vec2(-longitude * 0.5 + 0.5, latitude * 0.25 + 0.75);
+    // fix mip mapping seam artefact at 180° by manually setting gradients
+    vec2 dUVdx = dFdx(uv);
+    vec2 dUVdy = dFdy(uv);
+    if (abs(dUVdx.x) > 0.5) dUVdx.x = 0.0;
+    if (abs(dUVdy.x) > 0.5) dUVdy.x = 0.0;
+    vec4 tex_day = textureGrad(texSampler, uv, dUVdx, dUVdy);
+    uv.y -= 0.5;
+    vec4 tex_night = textureGrad(texSampler, uv, dUVdx, dUVdy);
+
+    vec3 col = brightness * tex_day.xyz + (1.0 - brightness) * tex_night.xyz;
     blend_colors(dists.y, vec4(col, 1.0) * dists.w, d, color);
 }
 
@@ -124,20 +142,46 @@ void moon(vec3 camera, vec3 dir, inout float d, inout vec4 color) {
     blend_colors(dists.y, vec4(col, 1.0) * dists.w, d, color);
 }
 
+float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x*p.y*p.z * (p.x+p.y+p.z));
+}
+
+void stars(float dist, vec3 camera, vec3 dir, inout float d, inout vec4 color) {
+    vec3 p = (camera + dist * dir) * 50;
+    vec3 p_int = round(p);
+    float rand = hash(p_int);
+    float is_star = step(0.9, rand) * (1.0 - smoothstep(0.05, 0.25, distance(p, p_int)));
+    vec4 star_color = vec4(is_star);
+    blend_colors(dist, star_color, d, color);
+}
+
 void main() {
     vec3 dir = normalize(fragPos - cameraPos);
+    vec4 dists = smooth_sphere(vec3(0.0), 1.0, cameraPos, dir);
+
+    if (dists.x <= 0.0) {
+        outColor = vec4(0.0);
+        return;
+    }
+
     float d = 10000.0;
     vec4 color = vec4(0.0);
     if (distance(cameraPos, vec3(0.0)) < 1.0) {
         color = CONTAINER_COLOR;
     } else {
-        vec4 dists = smooth_sphere(vec3(0.0), 1, cameraPos, dir);
-        blend_colors(dists.z, CONTAINER_COLOR * dists.w, d, color);
+        blend_colors(dists.z + 0.001, CONTAINER_COLOR * dists.w, d, color);
     }
+    stars(dists.z, cameraPos, dir, d, color);
 
     moon(cameraPos, dir, d, color);
     earth(cameraPos, dir, d, color);
     sun(cameraPos, dir, d, color);
+
+    if (distance(cameraPos, vec3(0.0)) > 1.0) {
+        stars(dists.y, cameraPos, dir, d, color);
+    }
 
     outColor = vec4(color.rgb / color.a, color.a);
 }

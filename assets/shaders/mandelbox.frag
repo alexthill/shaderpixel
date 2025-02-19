@@ -4,6 +4,8 @@
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 cameraPos;
 layout(location = 2) in float cameraDistToContainer;
+layout(location = 3) in vec2 iResolution;
+layout(location = 4) in float iTime;
 
 layout(location = 0) out vec4 outColor;
 
