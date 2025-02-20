@@ -8,6 +8,19 @@ use super::{
 use ash::{vk, Device};
 use std::ffi::CString;
 
+#[derive(Debug, Clone, Copy)]
+pub struct PipelineConfig {
+    pub cull_mode: vk::CullModeFlags,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            cull_mode: vk::CullModeFlags::BACK,
+        }
+    }
+}
+
 pub struct Pipeline {
     name: String,
     pipeline_and_layout: Option<(vk::Pipeline, vk::PipelineLayout)>,
@@ -15,7 +28,7 @@ pub struct Pipeline {
     pub geometry: Option<Geometry>,
     pub active: bool,
     pub waiting_for_shaders: bool,
-    cull_mode: vk::CullModeFlags,
+    config: PipelineConfig,
     shaders: [Shader; 2],
     push_constants: Option<PushConstants>,
 }
@@ -26,12 +39,12 @@ impl Pipeline {
         name: String,
         device: &Device,
         swapchain_properties: SwapchainProperties,
-        cull_mode: vk::CullModeFlags,
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
         descriptor_sets: Vec<vk::DescriptorSet>,
         geometry: Geometry,
+        config: PipelineConfig,
         shaders: [Shader; 2],
         push_constants: Option<PushConstants>,
     ) -> Result<Self, anyhow::Error> {
@@ -42,7 +55,7 @@ impl Pipeline {
             active: true,
             waiting_for_shaders: true,
             descriptor_sets,
-            cull_mode,
+            config,
             shaders,
             push_constants,
         };
@@ -87,7 +100,7 @@ impl Pipeline {
             self.pipeline_and_layout = Some(Self::create_pipeline(
                 device,
                 swapchain_properties,
-                self.cull_mode,
+                self.config,
                 msaa_samples,
                 render_pass,
                 descriptor_set_layout,
@@ -157,10 +170,11 @@ impl Pipeline {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_pipeline(
         device: &Device,
         swapchain_properties: SwapchainProperties,
-        cull_mode: vk::CullModeFlags,
+        config: PipelineConfig,
         msaa_samples: vk::SampleCountFlags,
         render_pass: vk::RenderPass,
         descriptor_set_layout: vk::DescriptorSetLayout,
@@ -178,11 +192,11 @@ impl Pipeline {
             .name(&entry_point_name);
         let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
 
-        let vertex_binding_descs = [geometry.vertex_binding_description];
-        let vertex_attribute_descs = &geometry.vertex_attribute_descriptions;
+        let vertex_binding_descs = [geometry.get_binding_description()];
+        let vertex_attribute_descs = geometry.get_attribute_descriptions();
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&vertex_binding_descs)
-            .vertex_attribute_descriptions(&vertex_attribute_descs);
+            .vertex_attribute_descriptions(vertex_attribute_descs);
 
         let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -211,7 +225,7 @@ impl Pipeline {
             .rasterizer_discard_enable(false)
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
-            .cull_mode(cull_mode)
+            .cull_mode(config.cull_mode)
             .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)

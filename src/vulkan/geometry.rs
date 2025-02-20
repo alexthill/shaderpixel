@@ -8,8 +8,8 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct Geometry {
     rc: Option<Rc<()>>,
-    pub vertex_binding_description: vk::VertexInputBindingDescription,
-    pub vertex_attribute_descriptions: Vec<vk::VertexInputAttributeDescription>,
+    vertex_binding_description: vk::VertexInputBindingDescription,
+    vertex_attribute_descriptions: Vec<vk::VertexInputAttributeDescription>,
     vertex_buffer: vk::Buffer,
     vertex_buffer_memory: vk::DeviceMemory,
     index_buffer: vk::Buffer,
@@ -54,6 +54,14 @@ impl Geometry {
 
     pub fn get(&self) -> Option<(vk::Buffer, vk::Buffer, u32)> {
         self.rc.as_ref().map(|_| (self.vertex_buffer, self.index_buffer, self.index_count))
+    }
+
+    pub fn get_binding_description(&self) -> vk::VertexInputBindingDescription {
+        self.vertex_binding_description
+    }
+
+    pub fn get_attribute_descriptions(&self) -> &[vk::VertexInputAttributeDescription] {
+        &self.vertex_attribute_descriptions
     }
 
     pub unsafe fn cleanup(mut self, device: &Device) {
