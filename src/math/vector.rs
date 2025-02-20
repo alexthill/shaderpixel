@@ -56,6 +56,10 @@ impl<T: Copy + Default, const N: usize> Vector<T, N> {
 }
 
 impl<T: ops::Mul<Output = T> + std::iter::Sum, const N: usize> Vector<T, N> {
+    pub fn sum(self) -> T {
+        self.array.into_iter().sum::<T>()
+    }
+
     pub fn dot(self, rhs: Self) -> T {
         self.array.into_iter()
             .zip(rhs.array)
@@ -132,6 +136,16 @@ impl<T: ops::SubAssign, const N: usize> ops::SubAssign for Vector<T, N> {
         for (a, b) in self.array.iter_mut().zip(rhs.array) {
             *a -= b;
         }
+    }
+}
+
+impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul<Self> for Vector<T, N> {
+    type Output = Self;
+    fn mul(mut self, rhs: Self) -> Self::Output {
+        for i in 0..N {
+            self.array[i] = self.array[i] * rhs.array[i]
+        }
+        self
     }
 }
 
