@@ -1,5 +1,6 @@
 use super::matrix:: Matrix;
 
+use std::iter;
 use std::ops;
 
 /// A fixed sized vector that is generic over its type and size.
@@ -55,11 +56,13 @@ impl<T: Copy + Default, const N: usize> Vector<T, N> {
     }
 }
 
-impl<T: ops::Mul<Output = T> + std::iter::Sum, const N: usize> Vector<T, N> {
+impl<T: iter::Sum, const N: usize> Vector<T, N> {
     pub fn sum(self) -> T {
         self.array.into_iter().sum::<T>()
     }
+}
 
+impl<T: ops::Mul<Output = T> + iter::Sum, const N: usize> Vector<T, N> {
     pub fn dot(self, rhs: Self) -> T {
         self.array.into_iter()
             .zip(rhs.array)
@@ -97,20 +100,25 @@ where
     }
 }
 
-impl<T: ops::Neg<Output = T>, const N: usize> ops::Neg for Vector<T, N> {
-    type Output = Self;
-
+impl<T: ops::Neg, const N: usize> ops::Neg for Vector<T, N> {
+    type Output = Vector<<T as ops::Neg>::Output, N>;
     fn neg(self) -> Self::Output {
-        Self { array: self.array.map(|x| -x) }
+        self.array.map(|x| -x).into()
     }
 }
 
 impl<T: ops::AddAssign, const N: usize> ops::Add for Vector<T, N> {
     type Output = Self;
-
     fn add(mut self, rhs: Self) -> Self::Output {
         self += rhs;
         self
+    }
+}
+
+impl<T: ops::Add + Copy, const N: usize> ops::Add<T> for Vector<T, N> {
+    type Output = Vector<<T as ops::Add>::Output, N>;
+    fn add(self, rhs: T) -> Self::Output {
+        self.array.map(|x| x + rhs).into()
     }
 }
 
@@ -124,10 +132,16 @@ impl<T: ops::AddAssign, const N: usize> ops::AddAssign for Vector<T, N> {
 
 impl<T: ops::SubAssign, const N: usize> ops::Sub for Vector<T, N> {
     type Output = Self;
-
     fn sub(mut self, rhs: Self) -> Self::Output {
         self -= rhs;
         self
+    }
+}
+
+impl<T: ops::Sub + Copy, const N: usize> ops::Sub<T> for Vector<T, N> {
+    type Output = Vector<<T as ops::Sub>::Output, N>;
+    fn sub(self, rhs: T) -> Self::Output {
+        self.array.map(|x| x - rhs).into()
     }
 }
 
@@ -139,7 +153,7 @@ impl<T: ops::SubAssign, const N: usize> ops::SubAssign for Vector<T, N> {
     }
 }
 
-impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul<Self> for Vector<T, N> {
+impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul for Vector<T, N> {
     type Output = Self;
     fn mul(mut self, rhs: Self) -> Self::Output {
         for i in 0..N {
@@ -150,16 +164,26 @@ impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul<Self> for Vector<T
 }
 
 impl<T: Copy + ops::Mul<Output = T>, const N: usize> ops::Mul<T> for Vector<T, N> {
-    type Output = Self;
+    type Output = Vector<<T as ops::Mul>::Output, N>;
     fn mul(self, rhs: T) -> Self::Output {
-        Self { array: self.array.map(|x| x * rhs) }
+        self.array.map(|x| x * rhs).into()
+    }
+}
+
+impl<T: Copy + ops::Div<Output = T>, const N: usize> ops::Div for Vector<T, N> {
+    type Output = Self;
+    fn div(mut self, rhs: Self) -> Self::Output {
+        for i in 0..N {
+            self.array[i] = self.array[i] / rhs.array[i]
+        }
+        self
     }
 }
 
 impl<T: Copy + ops::Div<Output = T>, const N: usize> ops::Div<T> for Vector<T, N> {
-    type Output = Self;
+    type Output = Vector<<T as ops::Div>::Output, N>;
     fn div(self, rhs: T) -> Self::Output {
-        Self { array: self.array.map(|x| x / rhs) }
+        self.array.map(|x| x / rhs).into()
     }
 }
 
@@ -189,6 +213,18 @@ impl<T, const N: usize> From<Vector<T, N>> for [T; N] {
 impl<T, const N: usize> From<[T; N]> for Vector<T, N> {
     fn from(array: [T; N]) -> Self {
         Self { array }
+    }
+}
+
+impl<T: PartialEq, const N: usize> PartialEq<[T; N]> for Vector<T, N> {
+    fn eq(&self, rhs: &[T; N]) -> bool {
+        &self.array == rhs
+    }
+}
+
+impl<T: PartialEq, const N: usize> PartialEq<Vector<T, N>> for [T; N] {
+    fn eq(&self, rhs: &Vector<T, N>) -> bool {
+        self == &rhs.array
     }
 }
 
@@ -224,6 +260,12 @@ mod tests {
     }
 
     #[test]
+    fn eq() {
+        assert_eq!(Vector::from([1, 2]), [1, 2]);
+        assert_ne!(Vector::from([1, 2]), [2, 1]);
+    }
+
+    #[test]
     fn index() {
         let mut a = Vector::from([1, 2]);
         assert_eq!(a[0], 1);
@@ -235,28 +277,44 @@ mod tests {
     #[test]
     fn neg() {
         let a = Vector::from([1, 2]);
-        assert_eq!(-a, [-1, -2].into());
+        assert_eq!(-a, [-1, -2]);
     }
 
     #[test]
     fn add() {
-        let a = Vector::from([1, 2]);
+        let mut a = Vector::from([1, 2]);
         let b = Vector::from([3, 4]);
-        assert_eq!(a + b, [4, 6].into());
+        assert_eq!(a + b, [4, 6]);
+        a += b;
+        assert_eq!(a, [4, 6]);
+    }
+
+    #[test]
+    fn add_value() {
+        let a = Vector::from([1, 2]);
+        assert_eq!(a + 3, [4, 5]);
     }
 
     #[test]
     fn sub() {
-        let a = Vector::from([1, 2]);
+        let mut a = Vector::from([1, 2]);
         let b = Vector::from([3, 4]);
-        assert_eq!(a - b, [-2, -2].into());
+        assert_eq!(a - b, [-2, -2]);
+        a -= b;
+        assert_eq!(a, [-2, -2]);
+    }
+
+    #[test]
+    fn sub_value() {
+        let a = Vector::from([1, 2]);
+        assert_eq!(a - 3, [-2, -1]);
     }
 
     #[test]
     fn mul_mat() {
         let v = Vector::from([1, 2]);
         let m = Matrix::from([[1, 2], [3, 4]]);
-        assert_eq!(v * m, [7, 10].into());
+        assert_eq!(v * m, [7, 10]);
     }
 
     #[test]
@@ -270,7 +328,7 @@ mod tests {
     fn cross() {
         let a = Vector::from([1, 2, 3]);
         let b = Vector::from([3, 4, 5]);
-        assert_eq!(a.cross(b), [-2, 4, -2].into());
+        assert_eq!(a.cross(b), [-2, 4, -2]);
     }
 
     #[test]

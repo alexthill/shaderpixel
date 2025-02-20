@@ -47,7 +47,7 @@ impl<T: Default + Copy + From<bool>, const M: usize> Matrix<T, M> {
     /// #Examples
     ///
     /// ```
-    /// use scop_lib::math::matrix::Matrix;
+    /// use shaderpixel::math::matrix::Matrix;
     ///
     /// let _ = Matrix::<_, 3, 3>::from_translation([1, 2].into());
     /// ```
@@ -235,8 +235,8 @@ mod tests {
             Vector::from([3, 4]),
         ]);
         let b: Matrix<i32, 2> = Matrix::from([[1, 2], [3, 4]]);
-        assert_eq!(Vector::from([1, 2]), a[0].into());
-        assert_eq!(Vector::from([3, 4]), a[1].into());
+        assert_eq!(Vector::from([1, 2]), a[0]);
+        assert_eq!(Vector::from([3, 4]), a[1]);
         assert_eq!(a, b);
     }
 

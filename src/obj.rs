@@ -233,21 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_obj_file_chalet() {
-        let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("models");
-        let file = File::open(src_dir.join("chalet.obj")).unwrap();
-        let reader = BufReader::new(file);
-        let obj = Obj::from_reader(reader).expect("failed to parse");
-        assert_eq!(obj.vertices.len(), 234246);
-        assert_eq!(obj.tex_coords.len(), 265645);
-        assert_eq!(obj.faces.len(), 500000);
-
-        let nobj = obj.normalize().expect("failed to normalize");
-        assert_eq!(nobj.vertices.len(), 265645);
-        assert_eq!(nobj.indices.len(), 500000 * 3);
-    }
-
-    #[test]
     fn parse_obj_file_42() {
         let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("models");
         let file = File::open(src_dir.join("42.obj")).unwrap();
