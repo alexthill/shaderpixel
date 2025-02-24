@@ -132,8 +132,8 @@ impl Geometry {
 
 impl Drop for Geometry {
     fn drop(&mut self) {
-        if self.rc.is_some() {
-            panic!("Geometry was not cleaned up before beeing dropped");
+        if !std::thread::panicking() && self.rc.is_some() {
+            log::error!("Geometry was not cleaned up before beeing dropped");
         }
     }
 }

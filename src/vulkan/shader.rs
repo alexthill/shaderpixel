@@ -293,8 +293,8 @@ impl ShaderInner {
 
 impl Drop for ShaderInner {
     fn drop(&mut self) {
-        if self.module.is_some() {
-            panic!("Shader was not cleaned up before beeing dropped");
+        if !std::thread::panicking() &&  self.module.is_some() {
+            log::error!("Shader was not cleaned up before beeing dropped");
         }
     }
 }

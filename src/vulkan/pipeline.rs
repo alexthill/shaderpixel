@@ -301,8 +301,8 @@ impl Pipeline {
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        if self.pipeline_and_layout.is_some() {
-            panic!("Pipeline was not cleaned up before beeing dropped");
+        if !std::thread::panicking() && self.pipeline_and_layout.is_some() {
+            log::error!("Pipeline was not cleaned up before beeing dropped");
         }
     }
 }
