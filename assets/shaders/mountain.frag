@@ -3,7 +3,7 @@
 
 #define PI 3.1415926535
 #define NUM_STEPS 128
-#define EPSILON 0.0001
+#define NUM_OCTAVES 10
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 cameraPos;
@@ -33,11 +33,10 @@ float noise(vec2 st) {
     return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
 
-#define OCTAVES 10
 float fbm(vec2 st) {
     float value = 0.0;
     float amplitude = 0.5;
-    for (int i = 0; i < OCTAVES; i++) {
+    for (int i = 0; i < NUM_OCTAVES; i++) {
         value += amplitude * noise(st);
         st *= 2.0;
         amplitude *= 0.49;
@@ -72,25 +71,26 @@ vec2 sdf_scene(vec3 p) {
 }
 
 vec3 estimate_normal(vec3 p) {
+    const float eps = 0.0001;
     return normalize(vec3(
-        sdf_scene(vec3(p.x + EPSILON, p.y, p.z)).x - sdf_scene(vec3(p.x - EPSILON, p.y, p.z)).x,
-        sdf_scene(vec3(p.x, p.y + EPSILON, p.z)).x - sdf_scene(vec3(p.x, p.y - EPSILON, p.z)).x,
-        sdf_scene(vec3(p.x, p.y, p.z  + EPSILON)).x - sdf_scene(vec3(p.x, p.y, p.z - EPSILON)).x
+        sdf_scene(vec3(p.x + eps, p.y, p.z)).x - sdf_scene(vec3(p.x - eps, p.y, p.z)).x,
+        sdf_scene(vec3(p.x, p.y + eps, p.z)).x - sdf_scene(vec3(p.x, p.y - eps, p.z)).x,
+        sdf_scene(vec3(p.x, p.y, p.z  + eps)).x - sdf_scene(vec3(p.x, p.y, p.z - eps)).x
     ));
 }
 
-vec2 raymarch(vec3 pos, vec3 dir, float max_depth) {
-    float depth = 0.0;
+vec2 raymarch(vec3 pos, vec3 dir, float depth, float max_depth) {
     vec2 scene;
     for (int i = 0; i < NUM_STEPS; i++) {
         scene = sdf_scene(pos + depth * dir);
         float dist = scene.x;
-        if (dist < EPSILON) {
+        // use lower precision for mountain surface and higher precision for other details
+        if (dist < (scene.y == 0.0 ? depth * 0.005 : depth * 0.001)) {
             return vec2(depth, scene.y);
         }
         depth += dist * 0.5;
         if (depth >= max_depth) {
-            return vec2(max_depth, -1.0);
+            return vec2(max_depth, 1.0);
         }
     }
     return vec2(depth, scene.y);
@@ -99,27 +99,24 @@ vec2 raymarch(vec3 pos, vec3 dir, float max_depth) {
 
 void main() {
     vec3 dir = normalize(fragPos - cameraPos);
-    vec3 pos = cameraPos + cameraDistToContainer * dir;
-
-    float max_depth = distance(pos, fragPos);
-    vec2 scene = raymarch(pos, dir, max_depth);
+    float max_depth = distance(cameraPos, fragPos);
+    vec2 scene = raymarch(cameraPos, dir, cameraDistToContainer, max_depth);
 
     if (scene.x < max_depth) {
-        vec3 normal = estimate_normal(pos + scene.x * dir);
+        vec3 normal = estimate_normal(cameraPos + scene.x * dir);
 
-        vec3 ambient_color = vec3(0.21, 0.2, 0.2);
-        vec3 diffuse_color = vec3(0.21, 0.2, 0.2);
+        vec3 ambient_color;
+        vec3 diffuse_color;
         if (scene.y == 0.0) {
-            if (abs(dot(normal, vec3(0.0, 1.0, 0.0))) < 0.85) {
-                ambient_color = vec3(0.21, 0.2, 0.2);
-                diffuse_color = vec3(0.21, 0.2, 0.2);
-            } else {
-                ambient_color = vec3(0.8);
-                diffuse_color = vec3(0.4);
-            }
+            ambient_color = vec3(0.8);
+            diffuse_color = vec3(0.4);
+            float angle_cos = abs(dot(normal, vec3(0.0, 1.0, 0.0)));
+            float a = 1.0 - smoothstep(0.75, 0.85, angle_cos);
+            ambient_color = mix(ambient_color, vec3(0.21, 0.2, 0.2), a);
+            diffuse_color = mix(diffuse_color, vec3(0.21, 0.2, 0.2), a);
         } else {
             ambient_color = vec3(0.4, 0.2, 0.1);
-            ambient_color = vec3(0.4, 0.2, 0.1);
+            diffuse_color = vec3(0.4, 0.2, 0.1);
         }
 
         vec3 light_dir = normalize(vec3(1.0, 1.0, 0.0));

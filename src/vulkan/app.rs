@@ -41,7 +41,7 @@ pub struct VkApp {
     pub dirty_swapchain: bool,
 
     pub view_matrix: Matrix4,
-    pub model_matrix: Matrix4,
+    model_matrix: Matrix4,
     pub texture_weight: f32,
 
     vk_context: VkContext,

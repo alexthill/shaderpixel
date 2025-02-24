@@ -79,7 +79,6 @@ struct App {
     pressed: KeyStates,
     load_next_image: bool,
     reload_shaders: bool,
-    is_left_clicked: bool,
     is_right_clicked: bool,
     cursor_position: Option<[i32; 2]>,
     cursor_delta: [i32; 2],
@@ -284,15 +283,12 @@ impl ApplicationHandler for App {
             WindowEvent::Resized { .. } => {
                 self.vulkan.as_mut().unwrap().dirty_swapchain = true;
             }
-            WindowEvent::MouseInput { button: MouseButton::Left, state, .. } => {
-                self.is_left_clicked = state == ElementState::Pressed;
-            }
             WindowEvent::MouseInput { button: MouseButton::Right, state, .. } => {
                 self.is_right_clicked = state == ElementState::Pressed;
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let new_pos: (i32, i32) = position.into();
-                if self.is_left_clicked | self.is_right_clicked {
+                if self.is_right_clicked {
                     if let Some(old_pos) = self.cursor_position {
                         self.cursor_delta[0] += new_pos.0 - old_pos[0];
                         self.cursor_delta[1] += new_pos.1 - old_pos[1];
@@ -343,7 +339,7 @@ impl ApplicationHandler for App {
         }
 
         let elapsed = self.last_frame.map(|instant| instant.elapsed()).unwrap_or_default();
-        let delta = elapsed.as_secs_f32() * (self.scroll_lines * 0.25).exp();
+        let delta = elapsed.as_secs_f32() * (self.scroll_lines * 0.4).exp();
         self.last_frame = Some(Instant::now());
         self.time += elapsed.as_secs_f32();
 
@@ -351,10 +347,6 @@ impl ApplicationHandler for App {
         let x_ratio = self.cursor_delta[0] as f32 / extent.width as f32;
         let y_ratio = self.cursor_delta[1] as f32 / extent.height as f32;
 
-        if self.is_left_clicked {
-            app.model_matrix = Matrix4::from_angle_y(Deg(x_ratio * 180.)) * app.model_matrix;
-            app.model_matrix = Matrix4::from_angle_x(Deg(y_ratio * 180.)) * app.model_matrix;
-        }
         if self.is_right_clicked {
             self.angle_yaw += Deg(x_ratio * 180.);
             self.angle_pitch += Deg(y_ratio * 180.);
