@@ -51,7 +51,7 @@ impl Shaders {
                 if let Err(err) = debouncer.watch(path, notify::RecursiveMode::Recursive) {
                     log::error!("failed to watch {}: {err}", path.display());
                 } else {
-                    log::debug!("watching file {}", path.display());
+                    log::debug!("watching path {}", path.display());
                 }
             }
             for res in rx {

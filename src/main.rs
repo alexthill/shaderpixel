@@ -314,10 +314,10 @@ impl ApplicationHandler for App {
         if let Some((start, count)) = self.fps.as_mut() {
             let time = start.elapsed();
             *count += 1;
-            if time.as_millis() > 1000 {
+            if time.as_millis() >= 1000 {
                 use std::io::Write;
 
-                eprint!("fps: {}        \r", *count as f32 / time.as_secs_f32());
+                eprint!("fps: {:.2}        \r", *count as f32 / time.as_secs_f32());
                 std::io::stdout().flush().unwrap();
                 *start = Instant::now();
                 *count = 0;
@@ -331,11 +331,10 @@ impl ApplicationHandler for App {
 
         if app.dirty_swapchain {
             let size = window.inner_size();
-            if size.width > 0 && size.height > 0 {
-                app.recreate_swapchain(size.width, size.height);
-            } else {
+            if size.width == 0 || size.height == 0 {
                 return;
             }
+            app.recreate_swapchain(size.width, size.height);
         }
 
         let elapsed = self.last_frame.map(|instant| instant.elapsed()).unwrap_or_default();
@@ -389,7 +388,7 @@ impl ApplicationHandler for App {
 
         app.texture_weight = (app.texture_weight + self.tex_weight_change * delta).clamp(0., 1.);
 
-        app.dirty_swapchain = app.draw_frame(self.time);
+        app.dirty_swapchain = app.draw_frame(self.time, window);
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {

@@ -150,6 +150,8 @@ impl VkContext {
 
     /// Return the maximum sample count supported.
     pub fn get_max_usable_sample_count(&self) -> vk::SampleCountFlags {
+        vk::SampleCountFlags::TYPE_1
+        /*
         let props = self.physical_device_properties();
         let color_sample_counts = props.limits.framebuffer_color_sample_counts;
         let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
@@ -170,6 +172,7 @@ impl VkContext {
         } else {
             vk::SampleCountFlags::TYPE_1
         }
+        */
     }
 
     /// Pick the first suitable physical device.
@@ -270,11 +273,9 @@ impl VkContext {
             .enabled_extension_names(&device_extensions_ptrs)
             .enabled_features(&device_features);
 
-        // Build device
-        let device = unsafe {
-            instance.create_device(device, &device_create_info, None)?
-        };
-        Ok(device)
+        unsafe {
+            Ok(instance.create_device(device, &device_create_info, None)?)
+        }
     }
 
     fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevice) -> bool {
@@ -290,14 +291,19 @@ impl VkContext {
         })
     }
 
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     fn get_required_device_extensions() -> [&'static CStr; 1] {
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-        [khr_swapchain::NAME]
+        [
+            khr_swapchain::NAME,
+        ]
     }
 
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn get_required_device_extensions() -> [&'static CStr; 2] {
-        [khr_swapchain::NAME, ash::khr::portability_subset::NAME]
+        [
+            khr_swapchain::NAME,
+            ash::khr::portability_subset::NAME,
+        ]
     }
 
     /// Find a queue family with at least one graphics queue and one with

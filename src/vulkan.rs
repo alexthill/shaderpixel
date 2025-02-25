@@ -3,6 +3,7 @@ mod buffer;
 mod cmd;
 mod context;
 mod debug;
+mod egui;
 mod geometry;
 mod pipeline;
 mod shader;

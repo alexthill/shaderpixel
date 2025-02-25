@@ -1,9 +1,12 @@
-use crate::fs;
-use crate::math::{self, Deg, Matrix4, Vector2, Vector3};
-use crate::obj::NormalizedObj;
+use crate::{
+    fs,
+    math::{self, Deg, Matrix4, Vector2, Vector3},
+    obj::NormalizedObj,
+};
 use super::{
     buffer, cmd,
     context::VkContext,
+    egui::Egui,
     geometry::Geometry,
     debug::*,
     pipeline::{Pipeline, PipelineConfig},
@@ -38,6 +41,9 @@ const PIPELINE_IDX_CUBE: usize = 1;
 const PIPELINE_IDX_ART: usize = 2;
 
 pub struct VkApp {
+    // drop this first
+    egui: Egui,
+
     pub dirty_swapchain: bool,
 
     pub view_matrix: Matrix4,
@@ -96,7 +102,7 @@ impl VkApp {
             .unwrap()
         };
 
-        let vk_context = VkContext::new(entry, instance, surface, surface_khr)
+        let vk_context = VkContext::new(entry, instance.clone(), surface, surface_khr)
             .context("Failed to create vulkan context")?;
         let graphics_queue = unsafe {
             vk_context.device().get_device_queue(vk_context.graphics_queue_index(), 0)
@@ -307,6 +313,9 @@ impl VkApp {
         unsafe { geometry_skybox.cleanup(vk_context.device()); }
         unsafe { geometry_quad.cleanup(vk_context.device()); }
 
+        let mut egui = Egui::new(&instance, &vk_context, render_pass, window, MAX_FRAMES_IN_FLIGHT as _)?;
+        egui.prepare_draw(window, graphics_queue, command_pool);
+
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device(),
             command_pool,
@@ -314,11 +323,13 @@ impl VkApp {
             render_pass,
             properties,
             &pipelines,
+            &mut egui,
         );
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device());
 
         Ok(Self {
+            egui,
             view_matrix: Matrix4::unit(),
             model_matrix: Matrix4::unit(),
             texture_weight: 0.,
@@ -517,7 +528,8 @@ impl VkApp {
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+            //.final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         let depth_attachement_desc = vk::AttachmentDescription::default()
             .format(depth_format)
             .samples(msaa_samples)
@@ -527,6 +539,7 @@ impl VkApp {
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        /*
         let resolve_attachment_desc = vk::AttachmentDescription::default()
             .format(swapchain_properties.format.format)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -536,10 +549,11 @@ impl VkApp {
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+        */
         let attachment_descs = [
             color_attachment_desc,
             depth_attachement_desc,
-            resolve_attachment_desc,
+            //resolve_attachment_desc,
         ];
 
         let color_attachment_ref = vk::AttachmentReference::default()
@@ -551,18 +565,21 @@ impl VkApp {
             .attachment(1)
             .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
+        /*
         let resolve_attachment_ref = vk::AttachmentReference::default()
             .attachment(2)
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         let resolve_attachment_refs = [resolve_attachment_ref];
+        */
 
         let subpass_desc = vk::SubpassDescription::default()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&color_attachment_refs)
-            .resolve_attachments(&resolve_attachment_refs)
+            //.resolve_attachments(&resolve_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref);
         let subpass_descs = [subpass_desc];
 
+        /*
         let subpass_dep = vk::SubpassDependency::default()
             .src_subpass(vk::SUBPASS_EXTERNAL)
             .dst_subpass(0)
@@ -573,11 +590,12 @@ impl VkApp {
                 vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
             );
         let subpass_deps = [subpass_dep];
+        */
 
         let render_pass_info = vk::RenderPassCreateInfo::default()
             .attachments(&attachment_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps);
+            .subpasses(&subpass_descs);
+            //.dependencies(&subpass_deps);
 
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
@@ -673,7 +691,8 @@ impl VkApp {
         swapchain_properties: SwapchainProperties,
     ) -> Vec<vk::Framebuffer> {
         image_views.iter()
-            .map(|view| [color_texture.view, depth_texture.view, *view])
+            //.map(|view| [color_texture.view, depth_texture.view, *view])
+            .map(|view| [*view, depth_texture.view])
             .map(|attachments| {
                 let framebuffer_info = vk::FramebufferCreateInfo::default()
                     .render_pass(render_pass)
@@ -1455,6 +1474,7 @@ impl VkApp {
             self.render_pass,
             self.swapchain_properties,
             &self.pipelines,
+            &mut self.egui,
         );
     }
 
@@ -1466,6 +1486,7 @@ impl VkApp {
         render_pass: vk::RenderPass,
         swapchain_properties: SwapchainProperties,
         pipelines: &[Pipeline],
+        egui: &mut Egui,
     ) -> Vec<vk::CommandBuffer> {
         let allocate_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(pool)
@@ -1523,6 +1544,9 @@ impl VkApp {
                 }
             }
 
+            // draw ui
+            egui.draw(buffer, swapchain_properties.extent).unwrap();
+
             // end render pass and command buffer
             unsafe {
                 device.cmd_end_render_pass(buffer);
@@ -1572,9 +1596,7 @@ impl VkApp {
     /// #Returns
     ///
     /// True if the swapchain is dirty and needs to be recreated.
-    pub fn draw_frame(&mut self, time: f32) -> bool {
-        log::trace!("Drawing frame.");
-
+    pub fn draw_frame(&mut self, time: f32, window: &Window) -> bool {
         let device = self.vk_context.device();
         let mut recreate_command_buffers = false;
         for pipeline in self.pipelines[PIPELINE_IDX_ART..].iter_mut() {
@@ -1609,6 +1631,8 @@ impl VkApp {
             self.vk_context.device().wait_for_fences(&wait_fences, true, u64::MAX).unwrap()
         };
 
+        self.egui.prepare_draw(window, self.graphics_queue, self.command_pool);
+
         let result = unsafe {
             self.swapchain.acquire_next_image(
                 self.swapchain_khr,
@@ -1630,6 +1654,8 @@ impl VkApp {
         unsafe { self.vk_context.device().reset_fences(&wait_fences).unwrap() };
 
         self.update_uniform_buffers(image_index, time);
+
+        //self.recreate_command_buffers();
 
         let device = self.vk_context.device();
         let wait_semaphores = [image_available_semaphore];
@@ -1734,7 +1760,6 @@ impl VkApp {
             dimensions,
         );
         let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
-
         let render_pass =
             Self::create_render_pass(device, properties, self.msaa_samples, self.depth_format);
 
@@ -1774,6 +1799,7 @@ impl VkApp {
             properties,
         );
 
+        self.egui.set_render_pass(render_pass);
         self.swapchain = swapchain;
         self.swapchain_khr = swapchain_khr;
         self.swapchain_properties = properties;
