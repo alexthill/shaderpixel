@@ -2,9 +2,9 @@
 name = "shaderpixel"
 version = "0.1.0"
 authors = ["Alex Thill"]
-edition = "2021"
+edition = "2024"
 build = "build.rs"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [dependencies]
 anyhow = "1.0"

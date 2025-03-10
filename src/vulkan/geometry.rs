@@ -67,10 +67,12 @@ impl Geometry {
     pub unsafe fn cleanup(mut self, device: &Device) {
         if self.rc.take().map(|rc| Rc::strong_count(&rc) == 1).unwrap_or(false) {
             log::debug!("cleaning Geometry");
-            device.free_memory(self.index_buffer_memory, None);
-            device.destroy_buffer(self.index_buffer, None);
-            device.free_memory(self.vertex_buffer_memory, None);
-            device.destroy_buffer(self.vertex_buffer, None);
+            unsafe {
+                device.free_memory(self.index_buffer_memory, None);
+                device.destroy_buffer(self.index_buffer, None);
+                device.free_memory(self.vertex_buffer_memory, None);
+                device.destroy_buffer(self.vertex_buffer, None);
+            }
         }
     }
 

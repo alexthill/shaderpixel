@@ -1812,8 +1812,8 @@ impl VkApp {
         let ubo = UniformBufferObject {
             model: self.model_matrix,
             view: self.view_matrix,
-            resolution: Vector2::from([extent.width as f32, extent.height as f32]),
             proj: math::perspective(Deg(75.0), aspect, 0.1, 200.0),
+            resolution: Vector2::from([extent.width as f32, extent.height as f32]),
             texture_weight: self.texture_weight,
             time,
         };

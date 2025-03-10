@@ -119,33 +119,43 @@ impl Pipeline {
         i: usize,
     ) {
         let (pip_pip, pip_layout) = self.get().expect("pipeline must be initalized");
-        device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, pip_pip);
+        unsafe {
+            device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, pip_pip);
+        }
         let index_count = if let Some(geometry) = &self.geometry {
             let (vertex_buffer, index_buffer, index_count) = geometry.get().unwrap();
-            device.cmd_bind_vertex_buffers(buffer, 0, &[vertex_buffer], &[0]);
-            device.cmd_bind_index_buffer(buffer, index_buffer, 0, vk::IndexType::UINT32);
+            unsafe {
+                device.cmd_bind_vertex_buffers(buffer, 0, &[vertex_buffer], &[0]);
+                device.cmd_bind_index_buffer(buffer, index_buffer, 0, vk::IndexType::UINT32);
+            }
             index_count
         } else {
             0
         };
 
-        unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-            ::core::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
+        fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+            unsafe {
+                ::core::slice::from_raw_parts((p as *const T) as *const u8, size_of::<T>())
+            }
         }
         if let Some(push_constants) = self.push_constants.as_ref() {
             let cnsts = any_as_u8_slice(push_constants);
-            device.cmd_push_constants(buffer, pip_layout, vk::ShaderStageFlags::VERTEX, 0, cnsts);
+            unsafe {
+                device.cmd_push_constants(buffer, pip_layout, vk::ShaderStageFlags::VERTEX, 0, cnsts);
+            }
         }
 
-        device.cmd_bind_descriptor_sets(
-            buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            pip_layout,
-            0,
-            &self.descriptor_sets[i..=i],
-            &[],
-        );
-        device.cmd_draw_indexed(buffer, index_count, 1, 0, 0, 0);
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pip_layout,
+                0,
+                &self.descriptor_sets[i..=i],
+                &[],
+            );
+            device.cmd_draw_indexed(buffer, index_count, 1, 0, 0, 0);
+        }
     }
 
     pub fn get(&self) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
@@ -155,15 +165,17 @@ impl Pipeline {
     pub unsafe fn cleanup_pip(&mut self, device: &Device) {
         if let Some((pipeline, layout)) = self.pipeline_and_layout.take() {
             log::debug!("cleaning Pipeline {}", self.name);
-            device.destroy_pipeline(pipeline, None);
-            device.destroy_pipeline_layout(layout, None);
+            unsafe {
+                device.destroy_pipeline(pipeline, None);
+                device.destroy_pipeline_layout(layout, None);
+            }
         }
     }
 
     pub unsafe fn cleanup(&mut self, device: &Device) {
-        self.cleanup_pip(device);
+        unsafe { self.cleanup_pip(device); }
         if let Some(geometry) = self.geometry.take() {
-            geometry.cleanup(device);
+            unsafe { geometry.cleanup(device); }
         }
         for shader in self.shaders.iter_mut() {
             shader.cleanup(device);
